@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inventory</title>
+<link rel="stylesheet" href="inventory.css">
+</head>
+<body>
+
+<div class="app">
+  <div id="sidebar-container"></div>
+  <main class="main">
+    <div class="topbar">
+      <div class="topbar-title">Inventory</div>
+      <div class="topbar-right">
+        <span style="font-size:13px;color:var(--gray-600);">Admin</span>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" placeholder="Search items..." id="inv-search" oninput="filterInventory()">
+          </div>
+          <select class="filter-select" id="inv-cat-filter" onchange="filterInventory()">
+            <option value="">All Categories</option>
+            <option value="Food">Food</option>
+            <option value="Medicine">Medicine</option>
+            <option value="Supplies">Supplies</option>
+          </select>
+          <select class="filter-select" id="inv-shelter-filter" onchange="filterInventory()">
+            <option value="">All Shelters</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" onclick="openAddItem()">+ Add Item</button>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Item</th><th>Category</th><th>Shelter</th><th>Stock Level</th>
+                <th>Unit</th><th>Expiry</th><th>Status</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="inv-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Add/Edit Item Modal -->
+<div class="modal-overlay" id="modal-item">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title" id="item-modal-title">Add Item</h2>
+      <button class="modal-close" onclick="closeModal('modal-item')">×</button>
+    </div>
+    <div class="form-grid">
+      <input type="hidden" id="item-id">
+      <div class="form-group full"><label>Item Name *</label><input type="text" id="item-name" placeholder="e.g. Dog Food (Dry)"></div>
+      <div class="form-group"><label>Category *</label>
+        <select id="item-category">
+          <option value="Food">Food</option>
+          <option value="Medicine">Medicine</option>
+          <option value="Supplies">Supplies</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Unit *</label><input type="text" id="item-unit" placeholder="kg, pcs, btl..."></div>
+      <div class="form-group"><label>Current Quantity</label><input type="number" id="item-qty" value="0" min="0" step="0.1"></div>
+      <div class="form-group"><label>Minimum Stock Level</label><input type="number" id="item-min" value="10" min="0" step="0.1"></div>
+      <div class="form-group"><label>Expiry Date</label><input type="date" id="item-expiry"></div>
+      <div class="form-group"><label>Shelter</label>
+        <select id="item-shelter"><option value="">Select shelter...</option></select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-item')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveItem()">Save Item</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const API = 'http://localhost/api/index.php?resource=';
+let allItems = [], allShelters = [];
+
+fetch('sidebar.html')
+  .then(r => r.text())
+  .then(html => {
+    document.getElementById('sidebar-container').innerHTML = html;
+    document.querySelectorAll('.nav-item')[1].classList.add('active');
+  });
+
+function toast(msg, type='success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show ' + type;
+  setTimeout(() => t.className = '', 2500);
+}
+
+function fmt(d) {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('en-PH', {month:'short',day:'numeric',year:'numeric'});
+}
+
+async function api(resource, method='GET', body=null, id=null) {
+    const opts = { method, headers: { 'Content-Type':'application/json' } };
+    if (body) opts.body = JSON.stringify(body);
+
+    const suffix = id !== null ? `&id=${encodeURIComponent(id)}` : '';
+    const url = `${API}${encodeURIComponent(resource)}${suffix}`;
+
+    const r = await fetch(url, opts);
+    return r.json();
+}
+
+
+function stockBadge(qty, min) {
+  const pct = min > 0 ? qty / min : 1;
+  if (pct <= 0) return `<span class="badge badge-expired">Out of Stock</span>`;
+  if (pct <= 1) return `<span class="badge badge-low">Low Stock</span>`;
+  return `<span class="badge badge-ok">In Stock</span>`;
+}
+
+function expiryBadge(d) {
+  if (!d) return '—';
+  const today = new Date(); today.setHours(0,0,0,0);
+  const exp = new Date(d);
+  const diff = Math.floor((exp - today) / 86400000);
+  if (diff < 0) return `<span class="badge badge-expired">Expired</span>`;
+  if (diff <= 30) return `<span class="badge badge-expiring">Expires in ${diff}d</span>`;
+  return `<span style="font-size:12.5px;color:var(--gray-600)">${fmt(d)}</span>`;
+}
+
+function progressBar(qty, min) {
+  const max = Math.max(qty, min * 2, 1);
+  const pct = Math.min((qty / max) * 100, 100);
+  const cls = qty <= min ? (qty <= min * 0.5 ? 'critical' : 'low') : '';
+  return `<div class="progress-wrap"><div class="progress-bar"><div class="progress-fill ${cls}" style="width:${pct}%"></div></div><span class="progress-num">${qty}/${min}</span></div>`;
+}
+
+async function loadInventory() {
+    [allItems, allShelters] = await Promise.all([
+        api('items'),
+        api('shelters')
+    ]);
+    populateShelterFilters();
+  renderInventory(allItems);
+}
+
+function renderInventory(items) {
+  document.getElementById('inv-tbody').innerHTML = items.length ? items.map(i => `
+    <tr>
+      <td><strong style="font-size:13.5px">${i.name}</strong></td>
+      <td><span class="badge badge-${i.category.toLowerCase()}">${i.category}</span></td>
+      <td style="font-size:13px;color:var(--gray-600)">${i.shelter_name || '—'}</td>
+      <td>${progressBar(i.quantity, i.min_stock)}</td>
+      <td style="font-size:13px">${i.unit}</td>
+      <td>${expiryBadge(i.expiry_date)}</td>
+      <td>${stockBadge(i.quantity, i.min_stock)}</td>
+      <td>
+        <button class="btn btn-sm btn-secondary" onclick="editItem(${i.item_id})">Edit</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteItem(${i.item_id},'${i.name}')">Del</button>
+      </td>
+    </tr>
+  `).join('') : '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📦</div><p>No items found</p></div></td></tr>';
+}
+
+function filterInventory() {
+  const q = document.getElementById('inv-search').value.toLowerCase();
+  const cat = document.getElementById('inv-cat-filter').value;
+  const shel = document.getElementById('inv-shelter-filter').value;
+  renderInventory(allItems.filter(i =>
+    (!q || i.name.toLowerCase().includes(q)) &&
+    (!cat || i.category === cat) &&
+    (!shel || String(i.shelter_id) === shel)
+  ));
+}
+
+function populateShelterFilters() {
+  ['inv-shelter-filter'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = '<option value="">All Shelters</option>' +
+      allShelters.map(s => `<option value="${s.shelter_id}">${s.name}</option>`).join('');
+  });
+  ['item-shelter'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = '<option value="">Select shelter...</option>' +
+      allShelters.map(s => `<option value="${s.shelter_id}">${s.name}</option>`).join('');
+  });
+}
+
+function openAddItem() {
+  document.getElementById('item-modal-title').textContent = 'Add Item';
+  document.getElementById('item-id').value = '';
+  ['item-name','item-unit'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('item-qty').value = 0;
+  document.getElementById('item-min').value = 10;
+  document.getElementById('item-expiry').value = '';
+  document.getElementById('item-category').value = 'Food';
+  populateShelterFilters();
+  document.getElementById('modal-item').classList.add('open');
+}
+
+async function editItem(id) {
+  const item = allItems.find(i => i.item_id === id);
+  if (!item) return;
+  document.getElementById('item-modal-title').textContent = 'Edit Item';
+  document.getElementById('item-id').value = id;
+  document.getElementById('item-name').value = item.name;
+  document.getElementById('item-category').value = item.category;
+  document.getElementById('item-unit').value = item.unit;
+  document.getElementById('item-qty').value = item.quantity;
+  document.getElementById('item-min').value = item.min_stock;
+  document.getElementById('item-expiry').value = item.expiry_date || '';
+  populateShelterFilters();
+  document.getElementById('item-shelter').value = item.shelter_id || '';
+  document.getElementById('modal-item').classList.add('open');
+}
+
+async function saveItem() {
+  const id = document.getElementById('item-id').value;
+  const data = {
+    name: document.getElementById('item-name').value.trim(),
+    category: document.getElementById('item-category').value,
+    unit: document.getElementById('item-unit').value.trim(),
+    quantity: parseFloat(document.getElementById('item-qty').value) || 0,
+    min_stock: parseFloat(document.getElementById('item-min').value) || 10,
+    expiry_date: document.getElementById('item-expiry').value || null,
+    shelter_id: document.getElementById('item-shelter').value || null
+  };
+  if (!data.name || !data.unit) return toast('Fill in required fields', 'error');
+  if (id) await api('/items/' + id, 'PUT', data);
+  else await api('/items', 'POST', data);
+  closeModal('modal-item');
+  toast(id ? 'Item updated' : 'Item added');
+  loadInventory();
+}
+
+async function deleteItem(id, name) {
+  if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+  await api('/items/' + id, 'DELETE');
+  toast('Item deleted');
+  loadInventory();
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+
+document.querySelectorAll('.modal-overlay').forEach(m => {
+  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
+});
+
+loadInventory();
+</script>
+</body>
+</html>
