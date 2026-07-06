@@ -1,135 +1,219 @@
-<!DOCTYPE html>
-<html lang="en">
+<?php
+require_once __DIR__ . "/db_config.php";
+
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
+$conn = new mysqli($dbHost, $dbUser, $dbPass, $dbName);
+if ($conn->connect_error) {
+    die("DB connection failed: " . $conn->connect_error);
+}
+
+$conn->set_charset("utf8mb4");
+
+function h($s) { return htmlspecialchars($s ?? "", ENT_QUOTES, "UTF-8"); }
+
+$suppliers = $conn->query("SELECT supplier_id, supplier_name FROM Suppliers ORDER BY supplier_id DESC");
+
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
+    $action = $_POST["action"] ?? "";
+    $supplier_id = (int)($_POST["supplier_id"] ?? 0);
+
+    $supplier_name = trim($_POST["supplier_name"] ?? "");
+    $contact = trim($_POST["contact"] ?? "");
+    $email = trim($_POST["email"] ?? "");
+    $address = trim($_POST["address"] ?? "");
+    $supplier_type = trim($_POST["supplier_type"] ?? "");
+    if ($supplier_type === "") $supplier_type = "General";
+
+    if ($action === "add") {
+        $stmt = $conn->prepare("
+        INSERT INTO Suppliers
+        (supplier_name, contact, email, address, supplier_type)
+        VALUES
+        (?, ?, ?, ?, ?)
+        ");
+        if (!$stmt) { die("Prepare failed (add): " . $conn->error); }
+
+        $stmt->bind_param(
+            "sssss",
+            $supplier_name,
+            $contact_param,
+            $email_param,
+            $address_param,
+            $supplier_type
+        );
+
+        $contact_param = ($contact === "") ? null : $contact;
+        $email_param   = ($email === "") ? null : $email;
+        $address_param = ($address === "") ? null : $address;
+
+        if (!$stmt->execute()) { die("Execute failed (add): " . $stmt->error); }
+        $stmt->close();
+
+    } elseif ($action === "update") {
+        $stmt = $conn->prepare("
+        UPDATE Suppliers
+        SET
+        supplier_name = ?,
+        contact = ?,
+        email = ?,
+        address = ?,
+        supplier_type = ?
+        WHERE supplier_id = ?
+        ");
+        if (!$stmt) { die("Prepare failed (update): " . $conn->error); }
+
+        $stmt->bind_param(
+            "sssssi",
+            $supplier_name,
+            $contact_param,
+            $email_param,
+            $address_param,
+            $supplier_type,
+            $supplier_id
+        );
+
+        $contact_param = ($contact === "") ? null : $contact;
+        $email_param   = ($email === "") ? null : $email;
+        $address_param = ($address === "") ? null : $address;
+
+        if (!$stmt->execute()) { die("Execute failed (update): " . $stmt->error); }
+        $stmt->close();
+
+    } elseif ($action === "delete") {
+        $stmt = $conn->prepare("DELETE FROM Suppliers WHERE supplier_id = ?");
+        $stmt->bind_param("i", $supplier_id);
+        $stmt->execute();
+        $stmt->close();
+    }
+}
+
+$editSupplier = null;
+if (isset($_GET["edit"])) {
+    $editId = (int)$_GET["edit"];
+    $stmt = $conn->prepare("
+    SELECT
+    supplier_id, supplier_name, contact, email, address, supplier_type,
+    created_at
+    FROM Suppliers
+    WHERE supplier_id = ?
+    ");
+    $stmt->bind_param("i", $editId);
+    $stmt->execute();
+    $editSupplier = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+}
+
+$result = $conn->query("
+SELECT
+supplier_id, supplier_name, contact, email, address, supplier_type, created_at
+FROM Suppliers
+ORDER BY supplier_id DESC
+");
+?>
+<!doctype html>
+<html>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="utf-8" />
 <title>Suppliers</title>
-<link rel="stylesheet" href="suppliers.css">
+<style>
+body { font-family: Arial, sans-serif; margin: 20px; }
+table { border-collapse: collapse; width: 100%; margin-top: 16px; }
+th, td { border: 1px solid #ddd; padding: 8px; }
+th { background: #f4f4f4; }
+form { margin: 0; }
+.row { margin-bottom: 10px; }
+input[type="text"], input[type="email"], textarea, select { padding: 6px; width: 100%; max-width: 420px; }
+.actions button { padding: 6px 10px; margin-right: 6px; }
+.card { border: 1px solid #ddd; padding: 14px; border-radius: 6px; max-width: 980px; }
+.small-muted { color: #666; font-size: 12px; margin-top: 6px; }
+textarea { height: 80px; resize: vertical; }
+</style>
 </head>
 <body>
+<h2>Suppliers</h2>
 
-<div class="app">
-<div id="sidebar-container"></div>
-<main class="main">
-<div class="topbar">
-<div class="topbar-title">Suppliers</div>
-<div class="topbar-right">
-<span style="font-size:13px;color:var(--gray-600);">Admin</span>
-</div>
-</div>
-
-<div class="content">
-<div class="toolbar">
-<div class="toolbar-left"></div>
-<button class="btn btn-primary" onclick="openAddSupplier()">+ Add Supplier</button>
-</div>
 <div class="card">
-<div class="table-wrap">
+<h3><?= $editSupplier ? "Edit Supplier Instance" : "Add Supplier Instance" ?></h3>
+
+<form method="post" action="suppliers.php">
+<input type="hidden" name="action" value="<?= $editSupplier ? "update" : "add" ?>">
+<?php if ($editSupplier): ?>
+<input type="hidden" name="supplier_id" value="<?= (int)$editSupplier["supplier_id"] ?>">
+<?php endif; ?>
+
+<div class="row">
+<label>Supplier Name</label><br>
+<input type="text" name="supplier_name" required value="<?= h($editSupplier["supplier_name"] ?? "") ?>">
+</div>
+
+<div class="row">
+<label>Contact</label><br>
+<input type="text" name="contact" value="<?= h($editSupplier["contact"] ?? "") ?>">
+</div>
+
+<div class="row">
+<label>Email</label><br>
+<input type="email" name="email" value="<?= h($editSupplier["email"] ?? "") ?>">
+</div>
+
+<div class="row">
+<label>Address</label><br>
+<textarea name="address"><?= h($editSupplier["address"] ?? "") ?></textarea>
+</div>
+
+<div class="row">
+<label>Supplier Type</label><br>
+<input type="text" name="supplier_type" required value="<?= h($editSupplier["supplier_type"] ?? "General") ?>">
+</div>
+
+<div class="actions">
+<button type="submit"><?= $editSupplier ? "Save Changes" : "Add Supplier" ?></button>
+<?php if ($editSupplier): ?>
+<a href="suppliers.php"><button type="button">Cancel</button></a>
+<?php endif; ?>
+</div>
+
+</form>
+</div>
+
 <table>
 <thead>
-<tr><th>Supplier</th><th>Contact</th><th>Email</th><th>Address</th><th>Registered</th></tr>
+<tr>
+<th>ID</th>
+<th>Name</th>
+<th>Contact</th>
+<th>Email</th>
+<th>Address</th>
+<th>Type</th>
+<th>Created</th>
+<th>Operations</th>
+</tr>
 </thead>
-<tbody id="sup-tbody"></tbody>
+<tbody>
+<?php while ($row = $result->fetch_assoc()): ?>
+<tr>
+<td><?= (int)$row["supplier_id"] ?></td>
+<td><?= h($row["supplier_name"]) ?></td>
+<td><?= h($row["contact"]) ?></td>
+<td><?= h($row["email"]) ?></td>
+<td><?= h($row["address"]) ?></td>
+<td><?= h($row["supplier_type"]) ?></td>
+<td><?= h($row["created_at"]) ?></td>
+<td>
+<a href="suppliers.php?edit=<?= (int)$row["supplier_id"] ?>">Edit</a>
+<form method="post" action="suppliers.php" style="display:inline;">
+<input type="hidden" name="action" value="delete">
+<input type="hidden" name="supplier_id" value="<?= (int)$row["supplier_id"] ?>">
+<button type="submit" onclick="return confirm('Delete supplier #<?= (int)$row["supplier_id"] ?>?');">Delete</button>
+</form>
+</td>
+</tr>
+<?php endwhile; ?>
+</tbody>
 </table>
-</div>
-</div>
-</div>
-</main>
-</div>
 
-<!-- Add Supplier Modal -->
-<div class="modal-overlay" id="modal-supplier">
-<div class="modal">
-<div class="modal-header">
-<h2 class="modal-title">Add Supplier</h2>
-<button class="modal-close" onclick="closeModal('modal-supplier')">×</button>
-</div>
-<div class="form-grid">
-<div class="form-group full"><label>Supplier Name *</label><input type="text" id="sup-name" placeholder="Company or person name"></div>
-<div class="form-group"><label>Contact</label><input type="text" id="sup-contact" placeholder="Phone number"></div>
-<div class="form-group"><label>Email</label><input type="email" id="sup-email" placeholder="email@example.com"></div>
-<div class="form-group full"><label>Address</label><input type="text" id="sup-address" placeholder="Street, City"></div>
-</div>
-<div class="modal-footer">
-<button class="btn btn-secondary" onclick="closeModal('modal-supplier')">Cancel</button>
-<button class="btn btn-primary" onclick="saveSupplier()">Save</button>
-</div>
-</div>
-</div>
-
-<div id="toast"></div>
-
-<script>
-const API = 'http://localhost/api/index.php?resource=suppliers';
-let allSuppliers = [];
-
-fetch('sidebar.html')
-.then(r => r.text())
-.then(html => {
-    document.getElementById('sidebar-container').innerHTML = html;
-    document.querySelectorAll('.nav-item')[4].classList.add('active');
-});
-
-function toast(msg, type='success') {
-    const t = document.getElementById('toast');
-    t.textContent = msg;
-    t.className = 'show ' + type;
-    setTimeout(() => t.className = '', 2500);
-}
-
-function fmt(d) {
-    if (!d) return '—';
-    return new Date(d).toLocaleDateString('en-PH', {month:'short',day:'numeric',year:'numeric'});
-}
-
-async function api(method='GET', body=null) {
-    const opts = { method, headers: {'Content-Type':'application/json'} };
-    if (body) opts.body = JSON.stringify(body);
-    const r = await fetch(API, opts);
-    return r.json();
-}
-
-async function loadSuppliers() {
-    allSuppliers = await api('GET');
-    document.getElementById('sup-tbody').innerHTML = allSuppliers.length ? allSuppliers.map(s => `
-    <tr>
-    <td><strong>${s.name}</strong></td>
-    <td style="font-size:13px">${s.contact || '—'}</td>
-    <td style="font-size:13px;color:var(--text-accent)">${s.email || '—'}</td>
-    <td style="font-size:12.5px;color:var(--gray-600)">${s.address || '—'}</td>
-    <td style="font-size:12.5px;color:var(--gray-600)">${fmt(s.created_at)}</td>
-    </tr>
-    `).join('') : '<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">🏭</div><p>No suppliers yet</p></div></td></tr>';
-}
-
-function openAddSupplier() {
-    ['sup-name','sup-contact','sup-email','sup-address'].forEach(id => document.getElementById(id).value = '');
-    document.getElementById('modal-supplier').classList.add('open');
-}
-
-async function saveSupplier() {
-    const data = {
-        name: document.getElementById('sup-name').value.trim(),
-        contact: document.getElementById('sup-contact').value,
-        email: document.getElementById('sup-email').value,
-        address: document.getElementById('sup-address').value
-    };
-    if (!data.name) return toast('Supplier name is required', 'error');
-    await api('POST', data);
-    closeModal('modal-supplier');
-    toast('Supplier added');
-    loadSuppliers();
-}
-
-function closeModal(id) {
-    document.getElementById(id).classList.remove('open');
-}
-
-document.querySelectorAll('.modal-overlay').forEach(m => {
-    m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
-});
-
-loadSuppliers();
-</script>
 </body>
 </html>
