@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard · openARMS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #1a6b4a;
+      --primary-light: #e8f5ee;
+      --primary-mid: #2d9166;
+      --primary-dark: #0f4a32;
+      --accent: #e67e22;
+      --accent-light: #fef3e8;
+      --info: #5b5fc7;
+      --info-light: #eeeefb;
+      --danger: #c0392b;
+      --danger-light: #fdecea;
+      --warning: #d68910;
+      --warning-light: #fef9e7;
+      --gray-50: #f8f9fa;
+      --gray-100: #f1f3f5;
+      --gray-200: #e9ecef;
+      --gray-300: #dee2e6;
+      --gray-400: #adb5bd;
+      --gray-500: #868e96;
+      --gray-600: #6c757d;
+      --gray-700: #495057;
+      --gray-800: #343a40;
+      --gray-900: #212529;
+      --sidebar-bg: #122019;
+      --sidebar-active: #f4f7f5;
+      --radius-sm: 10px;
+      --radius: 16px;
+      --radius-lg: 20px;
+      --shadow: 0 1px 3px rgba(16,24,20,0.06), 0 1px 2px rgba(16,24,20,0.04);
+      --shadow-md: 0 10px 26px rgba(16,24,20,0.09), 0 2px 6px rgba(16,24,20,0.05);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Arial, sans-serif; background: #f0f4f2; color: var(--gray-900); min-height: 100vh; -webkit-font-smoothing: antialiased; }
+    .app { display: flex; min-height: 100vh; }
+
+    /* Sidebar (styles a fetched sidebar.html — see class names below) */
+    .sidebar { width: 240px; background: var(--sidebar-bg); color: #fff; display: flex; flex-direction: column; position: fixed; height: 100vh; z-index: 100; }
+    .sidebar-brand { padding: 22px 20px 18px; }
+    .sidebar-brand .logo { display: flex; align-items: center; gap: 11px; }
+    .sidebar-brand .logo-icon { width: 38px; height: 38px; background: var(--primary); border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 4px 14px rgba(26,107,74,0.45); }
+    .sidebar-brand .logo-icon svg { width: 20px; height: 20px; }
+    .sidebar-brand h1 { font-size: 15px; font-weight: 700; letter-spacing: -0.2px; }
+    .sidebar-brand p { font-size: 10.5px; opacity: 0.5; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .sidebar-nav { flex: 1; padding: 14px 10px; overflow-y: auto; }
+    .nav-item { display: flex; align-items: center; gap: 11px; padding: 10px 13px; border-radius: 11px; cursor: pointer; font-size: 13.5px; transition: background 0.15s, color 0.15s; color: rgba(255,255,255,0.62); margin-bottom: 3px; text-decoration: none; font-weight: 500; }
+    .nav-item:hover { background: rgba(255,255,255,0.07); color: #fff; }
+    .nav-item.active { background: var(--sidebar-active); color: var(--primary-dark); font-weight: 700; box-shadow: 0 6px 16px rgba(0,0,0,0.28); }
+    .nav-item .nav-icon { width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .nav-item .nav-icon svg { width: 17px; height: 17px; }
+    .sidebar-footer { padding: 15px 20px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 11px; opacity: 0.4; }
+
+    .main { margin-left: 240px; flex: 1; display: flex; flex-direction: column; min-height: 100vh; }
+    .topbar { background: #fff; padding: 0 32px; height: 62px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--gray-200); position: sticky; top: 0; z-index: 50; }
+    .topbar-title { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; color: var(--gray-900); }
+    .topbar-right { display: flex; align-items: center; gap: 14px; }
+    .alert-badge { background: var(--danger); color: #fff; font-size: 11px; padding: 3px 9px; border-radius: 20px; font-weight: 600; cursor: pointer; }
+    .avatar { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), var(--primary-mid)); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+    .content { padding: 28px 32px; flex: 1; }
+
+    .card { background: #fff; border-radius: var(--radius-lg); box-shadow: var(--shadow); padding: 22px 24px; }
+    .card-title { font-size: 14.5px; font-weight: 700; color: var(--gray-800); margin-bottom: 18px; display: flex; align-items: center; gap: 9px; }
+    .card-title svg { width: 17px; height: 17px; }
+
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .stat-card { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; display: flex; flex-direction: column; gap: 4px; transition: box-shadow 0.2s, transform 0.2s; }
+    .stat-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+    .stat-icon { width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin-bottom: 10px; }
+    .stat-icon svg { width: 21px; height: 21px; }
+    .stat-icon.primary { background: var(--primary); }
+    .stat-icon.mid { background: var(--primary-mid); }
+    .stat-icon.accent { background: var(--accent); }
+    .stat-icon.warning { background: var(--warning); }
+    .stat-icon.danger { background: var(--danger); }
+    .stat-icon.info { background: var(--info); }
+    .stat-label { font-size: 12px; color: var(--gray-600); font-weight: 600; }
+    .stat-value { font-size: 27px; font-weight: 800; color: var(--gray-900); letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }
+    .stat-sub { font-size: 11.5px; color: var(--gray-400); }
+    /* kept for compatibility with other pages sharing this stylesheet */
+    .stat-card.warning { border-left: 4px solid var(--warning); }
+    .stat-card.danger { border-left: 4px solid var(--danger); }
+    .stat-card.accent { border-left: 4px solid var(--accent); }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+
+    /* Donut chart (Stock by Category) */
+    .donut-wrap { display: flex; align-items: center; gap: 26px; flex-wrap: wrap; }
+    .donut { position: relative; width: 148px; height: 148px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+    .donut::before { content: ''; position: absolute; inset: 23%; background: #fff; border-radius: 50%; }
+    .donut-center { position: relative; z-index: 1; text-align: center; }
+    .donut-center strong { font-size: 19px; display: block; color: var(--gray-900); }
+    .donut-center span { font-size: 10px; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.4px; }
+    .donut-legend { flex: 1; min-width: 180px; display: flex; flex-direction: column; }
+    .donut-legend-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--gray-100); }
+    .donut-legend-item:last-child { border-bottom: none; }
+    .li-left { display: flex; align-items: center; gap: 9px; }
+    .legend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .li-name { font-size: 13px; font-weight: 600; color: var(--gray-800); }
+    .li-sub { font-size: 11px; color: var(--gray-500); }
+    .li-pct { font-size: 13.5px; font-weight: 700; color: var(--gray-900); }
+
+    .alert-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--gray-100); }
+    .alert-item:last-child { border-bottom: none; }
+    .alert-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .alert-dot.danger { background: var(--danger); }
+    .alert-dot.warning { background: var(--warning); }
+    .alert-text { flex: 1; font-size: 13px; display: flex; flex-direction: column; gap: 2px; }
+    .alert-text strong { color: var(--gray-900); }
+    .alert-text span { color: var(--gray-600); font-size: 12px; }
+    .alert-severity { font-size: 10px; font-weight: 700; padding: 4px 9px; border-radius: 8px; text-transform: uppercase; letter-spacing: 0.3px; white-space: nowrap; }
+    .alert-severity.danger { background: var(--danger-light); color: var(--danger); }
+    .alert-severity.warning { background: var(--warning-light); color: var(--warning); }
+
+    .badge { display: inline-block; padding: 3px 9px; border-radius: 12px; font-size: 11.5px; font-weight: 600; }
+    .badge-food { background: #e3f4e8; color: #1e6b31; }
+    .badge-medicine { background: #eae3f4; color: #4a1e6b; }
+    .badge-supplies { background: #e3eef4; color: #1e4a6b; }
+    .badge-ok { background: var(--primary-light); color: var(--primary); }
+    .badge-low { background: var(--warning-light); color: var(--warning); }
+    .badge-expired { background: var(--danger-light); color: var(--danger); }
+    .badge-expiring { background: var(--warning-light); color: var(--warning); }
+
+    .feed-item { display: flex; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--gray-100); align-items: flex-start; }
+    .feed-item:last-child { border-bottom: none; }
+    .feed-dot { width: 30px; height: 30px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; margin-top: 1px; font-weight: 700; }
+    .feed-dot.in { background: #e3f4e8; color: #1e6b31; }
+    .feed-dot.out { background: var(--danger-light); color: var(--danger); }
+    .feed-body { flex: 1; font-size: 13px; }
+    .feed-body strong { display: block; color: var(--gray-900); }
+    .feed-body time { font-size: 11.5px; color: var(--gray-600); }
+
+    .empty-state { text-align: center; padding: 36px 20px; color: var(--gray-600); }
+    .empty-state .empty-icon { font-size: 34px; margin-bottom: 10px; }
+    .empty-state p { font-size: 13.5px; }
+
+    #toast { position: fixed; bottom: 24px; right: 24px; background: var(--gray-900); color: #fff; padding: 12px 18px; border-radius: 10px; font-size: 13.5px; z-index: 999; transform: translateY(80px); opacity: 0; transition: all 0.25s; pointer-events: none; box-shadow: var(--shadow-md); }
+    #toast.show { transform: translateY(0); opacity: 1; }
+    #toast.success { background: var(--primary); }
+    #toast.error { background: var(--danger); }
+
+    @media (max-width: 900px) {
+      .sidebar { width: 58px; }
+      .sidebar .nav-label, .sidebar-brand h1, .sidebar-brand p, .sidebar-footer { display: none; }
+      .main { margin-left: 58px; }
+      .grid-2 { grid-template-columns: 1fr; }
+      .donut-wrap { justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <div id="sidebar-container"></div>
+  <main class="main">
+    <div class="topbar">
+      <div class="topbar-title">Dashboard</div>
+      <div class="topbar-right">
+        <span id="alert-count-badge" class="alert-badge" style="display:none">0 alerts</span>
+        <div class="avatar">A</div>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="stats-grid" id="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon primary"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg></div>
+          <div class="stat-label">Total Items</div>
+          <div class="stat-value" id="s-items">–</div>
+          <div class="stat-sub">inventory types</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon mid"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></div>
+          <div class="stat-label">Total Qty</div>
+          <div class="stat-value" id="s-qty">–</div>
+          <div class="stat-sub">units in stock</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon warning"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+          <div class="stat-label">Low Stock</div>
+          <div class="stat-value" id="s-low">–</div>
+          <div class="stat-sub">items need restock</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon danger"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+          <div class="stat-label">Expired</div>
+          <div class="stat-value" id="s-exp">–</div>
+          <div class="stat-sub">items past expiry</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon accent"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></div>
+          <div class="stat-label">Donations</div>
+          <div class="stat-value" id="s-don">–</div>
+          <div class="stat-sub">total records</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon info"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></div>
+          <div class="stat-label">Suppliers</div>
+          <div class="stat-value" id="s-sup">–</div>
+          <div class="stat-sub">registered vendors</div>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-bottom:20px;">
+        <div class="card">
+          <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg> Stock by Category</div>
+          <div id="category-breakdown"></div>
+        </div>
+        <div class="card">
+          <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> Recent Activity</div>
+          <div id="recent-activity"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> Active Alerts</div>
+        <div id="dashboard-alerts"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const API = 'http://localhost:5000/api';
+
+// Load sidebar and highlight whichever page is currently open
+fetch('sidebar.html')
+  .then(r => r.text())
+  .then(html => {
+    document.getElementById('sidebar-container').innerHTML = html;
+    const currentPage = location.pathname.split('/').pop() || 'dashboard.html';
+    document.querySelectorAll('.nav-item').forEach(item => {
+      if (item.getAttribute('href') === currentPage) item.classList.add('active');
+    });
+  });
+
+function toast(msg, type='success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show ' + type;
+  setTimeout(() => t.className = '', 2500);
+}
+
+function fmt(d) {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('en-PH', {month:'short',day:'numeric',year:'numeric'});
+}
+
+async function api(path, method='GET', body=null) {
+  const opts = { method, headers: {'Content-Type':'application/json'} };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(API + path, opts);
+  return r.json();
+}
+
+const CATEGORY_COLORS = { food: '#1a6b4a', medicine: '#5b5fc7', supplies: '#e67e22' };
+const FALLBACK_COLORS = ['#2d9166', '#d68910', '#c0392b', '#1a6b4a', '#e67e22', '#5b5fc7'];
+
+function renderCategoryDonut(categories) {
+  const el = document.getElementById('category-breakdown');
+  if (!categories || !categories.length) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">📦</div><p>No inventory data yet</p></div>';
+    return;
+  }
+  const total = categories.reduce((s, c) => s + c.total_qty, 0) || 1;
+  const colorFor = (c, i) => CATEGORY_COLORS[c.category.toLowerCase()] || FALLBACK_COLORS[i % FALLBACK_COLORS.length];
+
+  let cumulative = 0;
+  const stops = categories.map((c, i) => {
+    const pct = (c.total_qty / total) * 100;
+    const start = cumulative;
+    cumulative += pct;
+    return `${colorFor(c, i)} ${start}% ${cumulative}%`;
+  }).join(', ');
+
+  const legend = categories.map((c, i) => `
+    <div class="donut-legend-item">
+      <div class="li-left">
+        <span class="legend-dot" style="background:${colorFor(c, i)}"></span>
+        <div>
+          <div class="li-name">${c.category}</div>
+          <div class="li-sub">${c.count} types · ${c.total_qty.toLocaleString()} units</div>
+        </div>
+      </div>
+      <div class="li-pct">${Math.round((c.total_qty / total) * 100)}%</div>
+    </div>
+  `).join('');
+
+  el.innerHTML = `
+    <div class="donut-wrap">
+      <div class="donut" style="background: conic-gradient(${stops});">
+        <div class="donut-center"><strong>${categories.length}</strong><span>Types</span></div>
+      </div>
+      <div class="donut-legend">${legend}</div>
+    </div>
+  `;
+}
+
+async function loadDashboard() {
+  const [stats, alerts] = await Promise.all([api('/stats'), api('/alerts')]);
+  document.getElementById('s-items').textContent = stats.total_items;
+  document.getElementById('s-qty').textContent = stats.total_quantity.toLocaleString();
+  document.getElementById('s-low').textContent = stats.low_stock_count;
+  document.getElementById('s-exp').textContent = stats.expired_count;
+  document.getElementById('s-don').textContent = stats.total_donations;
+  document.getElementById('s-sup').textContent = stats.total_suppliers;
+
+  const totalAlerts = alerts.low_stock.length + alerts.expired.length + alerts.expiring_soon.length;
+  const badge = document.getElementById('alert-count-badge');
+  if (totalAlerts > 0) { badge.style.display=''; badge.textContent = totalAlerts + ' alerts'; }
+  else badge.style.display = 'none';
+
+  renderCategoryDonut(stats.by_category);
+
+  document.getElementById('recent-activity').innerHTML = stats.recent_logs.length ? stats.recent_logs.map(l => `
+    <div class="feed-item">
+      <div class="feed-dot ${l.action.toLowerCase()}">${l.action === 'IN' ? '↓' : '↑'}</div>
+      <div class="feed-body">
+        <strong>${l.action === 'IN' ? '+' : '-'}${l.quantity} units — ${l.item_name}</strong>
+        <time>${fmt(l.logged_at)}</time>
+      </div>
+    </div>
+  `).join('') : '<div class="empty-state"><div class="empty-icon">⚡</div><p>No recent activity</p></div>';
+
+  const allA = [
+    ...alerts.expired.map(a => ({...a, type:'danger', label:'Expired', msg:`<strong>${a.name}</strong><span>${a.shelter_name}</span>`})),
+    ...alerts.low_stock.map(a => ({...a, type:'warning', label:'Low Stock', msg:`<strong>${a.name}</strong><span>${a.quantity} left · min ${a.min_stock}</span>`})),
+    ...alerts.expiring_soon.map(a => ({...a, type:'warning', label:'Expiring', msg:`<strong>${a.name}</strong><span>expires ${fmt(a.expiry_date)} · ${a.shelter_name}</span>`}))
+  ];
+  document.getElementById('dashboard-alerts').innerHTML = allA.length ? allA.map(a => `
+    <div class="alert-item">
+      <div class="alert-dot ${a.type}"></div>
+      <div class="alert-text">${a.msg}</div>
+      <span class="alert-severity ${a.type}">${a.label}</span>
+    </div>
+  `).join('') : '<div class="empty-state"><div class="empty-icon">✅</div><p>No active alerts</p></div>';
+}
+
+loadDashboard();
+</script>
+</body>
+</html>
