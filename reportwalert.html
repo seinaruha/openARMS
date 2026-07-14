@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reports</title>
+  <style>
+    :root {
+      --primary: #1a6b4a;
+      --primary-light: #e8f5ee;
+      --primary-mid: #2d9166;
+      --primary-dark: #0f4a32;
+      --accent: #e67e22;
+      --accent-light: #fef3e8;
+      --info: #5b5fc7;
+      --info-light: #eeeefb;
+      --danger: #c0392b;
+      --danger-light: #fdecea;
+      --warning: #d68910;
+      --warning-light: #fef9e7;
+      --gray-50: #f8f9fa;
+      --gray-100: #f1f3f5;
+      --gray-200: #e9ecef;
+      --gray-300: #dee2e6;
+      --gray-400: #adb5bd;
+      --gray-500: #868e96;
+      --gray-600: #6c757d;
+      --gray-700: #495057;
+      --gray-800: #343a40;
+      --gray-900: #212529;
+      --sidebar-bg: #122019;
+      --sidebar-active: #f4f7f5;
+      --radius-sm: 10px;
+      --radius: 16px;
+      --radius-lg: 20px;
+      --shadow: 0 1px 3px rgba(16,24,20,0.06), 0 1px 2px rgba(16,24,20,0.04);
+      --shadow-md: 0 10px 26px rgba(16,24,20,0.09), 0 2px 6px rgba(16,24,20,0.05);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Arial, sans-serif; background: #f0f4f2; color: var(--gray-900); min-height: 100vh; -webkit-font-smoothing: antialiased; }
+    .app { display: flex; min-height: 100vh; }
+    .sidebar { width: 240px; background: var(--sidebar-bg); color: #fff; display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; z-index: 100; flex-shrink: 0; }
+    .sidebar-brand { padding: 22px 20px 18px; }
+    .sidebar-brand .logo { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+    .sidebar-brand .logo-icon { width: 54px; height: 54px; background: var(--primary); border-radius: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 4px 14px rgba(26,107,74,0.45); overflow: hidden; margin-bottom: 2px; }
+    .sidebar-brand .logo-icon img { width: 100%; height: 100%; object-fit: cover; }
+    .sidebar-brand h1 { font-size: 15px; font-weight: 700; letter-spacing: -0.2px; line-height: 1.1; margin: 0; text-align: center; }
+    .sidebar-nav { flex: 1; padding: 14px 10px; overflow-y: auto; }
+    .nav-item { display: flex; align-items: center; gap: 11px; padding: 10px 13px; border-radius: 11px; cursor: pointer; font-size: 13.5px; transition: background 0.15s, color 0.15s; color: rgba(255,255,255,0.62); margin-bottom: 3px; text-decoration: none; font-weight: 500; }
+    .nav-item:hover { background: rgba(255,255,255,0.07); color: #fff; }
+    .nav-item.active { background: var(--sidebar-active); color: var(--primary-dark); font-weight: 700; box-shadow: 0 6px 16px rgba(0,0,0,0.28); }
+    .nav-item .nav-icon { width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .sidebar-footer { padding: 15px 20px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 11px; opacity: 0.4; }
+    .main { flex: 1; display: flex; flex-direction: column; min-height: 100vh; }
+    .topbar { background: #fff; padding: 0 32px; height: 62px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--gray-200); position: sticky; top: 0; z-index: 50; }
+    .topbar-title { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; color: var(--gray-900); }
+    .topbar-right { display: flex; align-items: center; gap: 10px; }
+    .content { padding: 28px 32px; flex: 1; }
+    .card { background: #fff; border-radius: var(--radius-lg); box-shadow: var(--shadow); padding: 22px 24px; }
+    .card-title { font-size: 14.5px; font-weight: 700; color: var(--gray-800); margin-bottom: 18px; display: flex; align-items: center; gap: 9px; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    th { background: var(--gray-50); color: var(--gray-600); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--gray-200); white-space: nowrap; }
+    td { padding: 11px 14px; border-bottom: 1px solid var(--gray-100); vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--gray-50); }
+    .badge { display: inline-block; padding: 3px 9px; border-radius: 12px; font-size: 11.5px; font-weight: 600; }
+    .badge-food { background: #e3f4e8; color: #1e6b31; }
+    .badge-medicine { background: #eae3f4; color: #4a1e6b; }
+    .badge-supplies { background: #e3eef4; color: #1e4a6b; }
+    .badge-ok { background: var(--primary-light); color: var(--primary); }
+    .badge-low { background: var(--warning-light); color: var(--warning); }
+    .badge-expired { background: var(--danger-light); color: var(--danger); }
+    .badge-expiring { background: var(--warning-light); color: var(--warning); }
+    .badge-in { background: #e3f4e8; color: #1e6b31; }
+    .badge-out { background: var(--danger-light); color: var(--danger); }
+    .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+    .toolbar-left { flex: 1; display: flex; gap: 10px; flex-wrap: wrap; }
+    select.filter-select { width: auto; padding: 8px 11px; border: 1px solid var(--gray-200); border-radius: 7px; font-size: 13.5px; font-family: inherit; }
+    .btn { padding: 8px 16px; border-radius: 7px; border: none; cursor: pointer; font-size: 13.5px; font-weight: 500; font-family: inherit; transition: all 0.15s; display: inline-flex; align-items: center; gap: 6px; }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: #165a3d; }
+    .btn-secondary { background: var(--gray-100); color: var(--gray-800); }
+    .btn-secondary:hover { background: var(--gray-200); }
+    .empty-state { text-align: center; padding: 40px 20px; color: var(--gray-600); }
+    .empty-state .empty-icon { font-size: 40px; margin-bottom: 10px; }
+    #toast { position: fixed; bottom: 24px; right: 24px; background: var(--gray-900); color: #fff; padding: 12px 18px; border-radius: 8px; font-size: 13.5px; z-index: 999; transform: translateY(80px); opacity: 0; transition: all 0.25s; }
+    #toast.show { transform: translateY(0); opacity: 1; }
+    #toast.success { background: var(--primary); }
+    @media (max-width: 900px) {
+      .sidebar { width: 58px; }
+      .sidebar .nav-label, .sidebar-brand h1, .sidebar-brand p, .sidebar-footer { display: none; }
+    }
+    @media print {
+      .topbar, .toolbar, .report-tabs, button { display: none; }
+      .card { box-shadow: none; border: 1px solid #ddd; }
+    }
+
+    /* --- Report-specific additions --- */
+    .report-tabs { display: flex; gap: 6px; margin-bottom: 18px; border-bottom: 1px solid var(--gray-200); }
+    .report-tab { padding: 10px 16px; font-size: 13.5px; font-weight: 600; color: var(--gray-600); background: none; border: none; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; font-family: inherit; display: flex; align-items: center; gap: 7px; }
+    .report-tab:hover { color: var(--gray-900); }
+    .report-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+    .report-section { display: none; }
+    .report-section.active { display: block; }
+
+    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 20px; }
+    .summary-stat { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 18px; }
+    .summary-stat .s-label { font-size: 11.5px; color: var(--gray-600); font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 6px; }
+    .summary-stat .s-value { font-size: 22px; font-weight: 800; color: var(--gray-900); letter-spacing: -0.4px; font-variant-numeric: tabular-nums; }
+    .summary-stat .s-sub { font-size: 11.5px; color: var(--gray-400); margin-top: 2px; }
+    .summary-stat.accent { border-left: 4px solid var(--accent); }
+    .summary-stat.danger { border-left: 4px solid var(--danger); }
+    .summary-stat.primary { border-left: 4px solid var(--primary); }
+    .summary-stat.info { border-left: 4px solid var(--info); }
+
+    .flow-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--gray-100); min-width: 90px; }
+    .flow-bar .in-seg { background: var(--primary); }
+    .flow-bar .out-seg { background: var(--danger); }
+    .flow-wrap { display: flex; align-items: center; gap: 8px; }
+    .flow-nums { font-size: 11.5px; color: var(--gray-600); white-space: nowrap; }
+    .net-pos { color: var(--primary); font-weight: 700; }
+    .net-neg { color: var(--danger); font-weight: 700; }
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <div id="sidebar-container"></div>
+  <main class="main">
+    <div class="topbar">
+      <div class="topbar-title">Reports</div>
+      <div class="topbar-right">
+        <span style="font-size:13px;color:var(--gray-600);">Admin </span>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <div class="report-tabs">
+        <button class="report-tab active" data-tab="stock" onclick="switchTab('stock')">📦 Stock Levels</button>
+        <button class="report-tab" data-tab="usage" onclick="switchTab('usage')">📈 Usage Trends</button>
+        <button class="report-tab" data-tab="donations" onclick="switchTab('donations')">🎁 Donation History</button>
+        <button class="report-tab" data-tab="wastage" onclick="switchTab('wastage')">🗑️ Wastage</button>
+      </div>
+
+      <!-- STOCK LEVELS -->
+      <div class="report-section active" id="section-stock">
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <select class="filter-select" id="rpt-shelter" onchange="loadReport()">
+              <option value="">All Shelters</option>
+            </select>
+          </div>
+          <button class="btn btn-secondary" onclick="printReport()">🖨️ Print Report</button>
+        </div>
+        <div class="card" id="report-card">
+          <div class="card-title">📊 Inventory Status Report</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Item</th><th>Category</th><th>Shelter</th><th>Qty</th><th>Unit</th><th>Min Stock</th><th>Expiry</th><th>Stock Status</th><th>Expiry Status</th></tr>
+              </thead>
+              <tbody id="rpt-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- USAGE TRENDS -->
+      <div class="report-section" id="section-usage">
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <select class="filter-select" id="usage-period" onchange="renderUsage()">
+              <option value="7">Last 7 days</option>
+              <option value="30" selected>Last 30 days</option>
+              <option value="90">Last 90 days</option>
+              <option value="0">All time</option>
+            </select>
+            <select class="filter-select" id="usage-cat" onchange="renderUsage()">
+              <option value="">All Categories</option>
+              <option value="Food">Food</option>
+              <option value="Medicine">Medicine</option>
+              <option value="Supplies">Supplies</option>
+            </select>
+          </div>
+          <button class="btn btn-secondary" onclick="printReport()">🖨️ Print Report</button>
+        </div>
+        <div class="summary-grid" id="usage-summary"></div>
+        <div class="card">
+          <div class="card-title">📈 Usage Trends by Item</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Item</th><th>Category</th><th>Stock In</th><th>Stock Out</th><th>Net Change</th><th>In / Out Flow</th></tr>
+              </thead>
+              <tbody id="usage-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- DONATION HISTORY -->
+      <div class="report-section" id="section-donations">
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <div class="search-box" style="position:relative;">
+              <input type="text" placeholder="Search donor or item..." id="don-rpt-search" oninput="renderDonationHistory()" style="padding:8px 11px;border:1px solid var(--gray-200);border-radius:7px;font-size:13.5px;width:220px;">
+            </div>
+          </div>
+          <button class="btn btn-secondary" onclick="printReport()">🖨️ Print Report</button>
+        </div>
+        <div class="summary-grid" id="donation-summary"></div>
+        <div class="card">
+          <div class="card-title">🎁 Donation History</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Donor</th><th>Item</th><th>Qty</th><th>Supplier</th><th>Date</th><th>Notes</th></tr>
+              </thead>
+              <tbody id="don-rpt-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- WASTAGE -->
+      <div class="report-section" id="section-wastage">
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <select class="filter-select" id="waste-period" onchange="renderWastage()">
+              <option value="7">Last 7 days</option>
+              <option value="30" selected>Last 30 days</option>
+              <option value="90">Last 90 days</option>
+              <option value="0">All time</option>
+            </select>
+          </div>
+          <button class="btn btn-secondary" onclick="printReport()">🖨️ Print Report</button>
+        </div>
+        <div class="summary-grid" id="wastage-summary"></div>
+        <div class="card">
+          <div class="card-title">🗑️ Wastage / Loss Log</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Item</th><th>Category</th><th>Qty Lost</th><th>Unit</th><th>Reason</th><th>Logged By</th><th>Date</th></tr>
+              </thead>
+              <tbody id="waste-tbody"></tbody>
+            </table>
+          </div>
+          <p style="font-size:11.5px;color:var(--gray-500);margin-top:10px;">
+            Wastage is inferred from Stock Log "Stock Out" entries whose reason mentions spoilage, expiry, damage, or disposal.
+            Log movements with a clear reason (e.g. "Expired — disposed", "Damaged in storage") to keep this report accurate.
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const API = 'http://localhost:5000/api';
+let allShelters = [], allItems = [], allLogs = [], allDonations = [];
+let loaded = { stock: false, usage: false, donations: false, wastage: false };
+const WASTE_PATTERN = /waste|wastage|spoil|spoiled|spoilage|expired|expiry|damage|damaged|discard|disposed|disposal|contaminated|rotten/i;
+
+fetch('sidebar.html')
+  .then(r => r.text())
+  .then(html => {
+    document.getElementById('sidebar-container').innerHTML = html;
+    document.querySelectorAll('.nav-item')[5].classList.add('active');
+  });
+
+function toast(msg, type='success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show ' + type;
+  setTimeout(() => t.className = '', 2500);
+}
+
+function fmt(d) {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('en-PH', {month:'short',day:'numeric',year:'numeric'});
+}
+
+async function api(path, method='GET', body=null) {
+  const opts = { method, headers: {'Content-Type':'application/json'} };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(API + path, opts);
+  return r.json();
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.report-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.report-section').forEach(s => s.classList.remove('active'));
+  document.getElementById('section-' + tab).classList.add('active');
+
+  if (tab === 'stock' && !loaded.stock) { loaded.stock = true; loadReport(); }
+  if (tab === 'usage' && !loaded.usage) { loaded.usage = true; loadUsage(); }
+  if (tab === 'donations' && !loaded.donations) { loaded.donations = true; loadDonationHistory(); }
+  if (tab === 'wastage' && !loaded.wastage) { loaded.wastage = true; loadWastage(); }
+}
+
+function printReport() { window.print(); }
+
+/* ---------------- STOCK LEVELS ---------------- */
+async function loadReport() {
+  if (!allShelters.length) allShelters = await api('/shelters');
+  populateShelterFilters();
+  const shel = document.getElementById('rpt-shelter').value;
+  const rows = await api('/reports/inventory' + (shel ? '?shelter_id='+shel : ''));
+  document.getElementById('rpt-tbody').innerHTML = rows.length ? rows.map(r => `
+    <tr>
+      <td><strong>${r.name}</strong></td>
+      <td><span class="badge badge-${r.category.toLowerCase()}">${r.category}</span></td>
+      <td style="font-size:13px;color:var(--gray-600)">${r.shelter_name || '—'}</td>
+      <td><strong>${r.quantity}</strong></td>
+      <td style="font-size:12.5px">${r.unit}</td>
+      <td style="font-size:12.5px;color:var(--gray-600)">${r.min_stock}</td>
+      <td style="font-size:12.5px">${r.expiry_date ? fmt(r.expiry_date) : '—'}</td>
+      <td>${r.stock_status === 'Low' ? '<span class="badge badge-low">Low</span>' : '<span class="badge badge-ok">OK</span>'}</td>
+      <td>${r.expiry_status === 'Expired' ? '<span class="badge badge-expired">Expired</span>' : r.expiry_status === 'Expiring Soon' ? '<span class="badge badge-expiring">Soon</span>' : '<span class="badge badge-ok">Good</span>'}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📊</div><p>No data</p></div></td></tr>';
+}
+
+function populateShelterFilters() {
+  const el = document.getElementById('rpt-shelter');
+  if (!el) return;
+  el.innerHTML = '<option value="">All Shelters</option>' +
+    allShelters.map(s => `<option value="${s.shelter_id}">${s.name}</option>`).join('');
+}
+
+/* ---------------- USAGE TRENDS ---------------- */
+async function loadUsage() {
+  [allLogs, allItems] = await Promise.all([api('/logs'), api('/items')]);
+  renderUsage();
+}
+
+function withinPeriod(dateStr, days) {
+  if (!days || days === '0') return true;
+  const d = new Date(dateStr);
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - parseInt(days, 10));
+  return d >= cutoff;
+}
+
+function renderUsage() {
+  if (!allLogs.length && !allItems.length) return;
+  const days = document.getElementById('usage-period').value;
+  const cat = document.getElementById('usage-cat').value;
+
+  const itemMeta = {};
+  allItems.forEach(i => itemMeta[i.item_id] = i);
+
+  const logsInRange = allLogs.filter(l => withinPeriod(l.logged_at, days) &&
+    (!cat || (itemMeta[l.item_id] && itemMeta[l.item_id].category === cat)));
+
+  const byItem = {};
+  logsInRange.forEach(l => {
+    if (!byItem[l.item_id]) byItem[l.item_id] = { item_name: l.item_name, unit: l.unit, in: 0, out: 0, category: itemMeta[l.item_id] ? itemMeta[l.item_id].category : '' };
+    if (l.action === 'IN') byItem[l.item_id].in += l.quantity;
+    else byItem[l.item_id].out += l.quantity;
+  });
+
+  const rows = Object.values(byItem).sort((a, b) => (b.in + b.out) - (a.in + a.out));
+
+  let totalIn = 0, totalOut = 0;
+  rows.forEach(r => { totalIn += r.in; totalOut += r.out; });
+  const mostActive = rows[0];
+
+  document.getElementById('usage-summary').innerHTML = `
+    <div class="summary-stat primary"><div class="s-label">Total Stock In</div><div class="s-value">${totalIn.toLocaleString()}</div><div class="s-sub">units received</div></div>
+    <div class="summary-stat danger"><div class="s-label">Total Stock Out</div><div class="s-value">${totalOut.toLocaleString()}</div><div class="s-sub">units used/dispatched</div></div>
+    <div class="summary-stat info"><div class="s-label">Net Change</div><div class="s-value ${(totalIn-totalOut)>=0?'net-pos':'net-neg'}">${(totalIn-totalOut)>=0?'+':''}${(totalIn-totalOut).toLocaleString()}</div><div class="s-sub">in minus out</div></div>
+    <div class="summary-stat accent"><div class="s-label">Most Active Item</div><div class="s-value" style="font-size:15px;">${mostActive ? mostActive.item_name : '—'}</div><div class="s-sub">${mostActive ? (mostActive.in+mostActive.out).toLocaleString()+' movements' : 'No activity'}</div></div>
+  `;
+
+  document.getElementById('usage-tbody').innerHTML = rows.length ? rows.map(r => {
+    const total = r.in + r.out || 1;
+    const inPct = Math.round((r.in/total)*100);
+    const net = r.in - r.out;
+    return `
+    <tr>
+      <td><strong>${r.item_name}</strong></td>
+      <td>${r.category ? `<span class="badge badge-${r.category.toLowerCase()}">${r.category}</span>` : '—'}</td>
+      <td style="color:var(--primary);font-weight:600">${r.in.toLocaleString()} ${r.unit}</td>
+      <td style="color:var(--danger);font-weight:600">${r.out.toLocaleString()} ${r.unit}</td>
+      <td class="${net>=0?'net-pos':'net-neg'}">${net>=0?'+':''}${net.toLocaleString()}</td>
+      <td>
+        <div class="flow-wrap">
+          <div class="flow-bar"><div class="in-seg" style="width:${inPct}%"></div><div class="out-seg" style="width:${100-inPct}%"></div></div>
+          <span class="flow-nums">${inPct}% in</span>
+        </div>
+      </td>
+    </tr>
+  `; }).join('') : '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📈</div><p>No usage activity in this period</p></div></td></tr>';
+}
+
+/* ---------------- DONATION HISTORY ---------------- */
+async function loadDonationHistory() {
+  allDonations = await api('/donations');
+  renderDonationHistory();
+}
+
+function renderDonationHistory() {
+  const q = (document.getElementById('don-rpt-search').value || '').toLowerCase();
+  const rows = allDonations.filter(d => !q ||
+    d.donor_name.toLowerCase().includes(q) || (d.item_name && d.item_name.toLowerCase().includes(q)));
+
+  const totalQty = allDonations.reduce((s, d) => s + Number(d.quantity || 0), 0);
+  const uniqueDonors = new Set(allDonations.map(d => d.donor_name)).size;
+  const itemCounts = {};
+  allDonations.forEach(d => { itemCounts[d.item_name] = (itemCounts[d.item_name] || 0) + Number(d.quantity || 0); });
+  const topItem = Object.entries(itemCounts).sort((a,b) => b[1]-a[1])[0];
+
+  document.getElementById('donation-summary').innerHTML = `
+    <div class="summary-stat primary"><div class="s-label">Total Donations</div><div class="s-value">${allDonations.length.toLocaleString()}</div><div class="s-sub">recorded entries</div></div>
+    <div class="summary-stat accent"><div class="s-label">Total Quantity</div><div class="s-value">${totalQty.toLocaleString()}</div><div class="s-sub">units donated</div></div>
+    <div class="summary-stat info"><div class="s-label">Unique Donors</div><div class="s-value">${uniqueDonors.toLocaleString()}</div><div class="s-sub">individuals/orgs</div></div>
+    <div class="summary-stat primary"><div class="s-label">Top Donated Item</div><div class="s-value" style="font-size:15px;">${topItem ? topItem[0] : '—'}</div><div class="s-sub">${topItem ? topItem[1].toLocaleString()+' units' : 'No donations yet'}</div></div>
+  `;
+
+  document.getElementById('don-rpt-tbody').innerHTML = rows.length ? rows.map(d => `
+    <tr>
+      <td><strong>${d.donor_name}</strong></td>
+      <td>${d.item_name}</td>
+      <td>${d.quantity} ${d.unit || ''}</td>
+      <td style="color:var(--gray-600);font-size:13px">${d.supplier_name || 'Walk-in'}</td>
+      <td style="font-size:12.5px;color:var(--gray-600)">${fmt(d.donated_at)}</td>
+      <td style="font-size:12.5px;color:var(--gray-600)">${d.notes || '—'}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">🎁</div><p>No donations found</p></div></td></tr>';
+}
+
+/* ---------------- WASTAGE ---------------- */
+async function loadWastage() {
+  if (!allLogs.length) allLogs = await api('/logs');
+  if (!allItems.length) allItems = await api('/items');
+  renderWastage();
+}
+
+function renderWastage() {
+  const days = document.getElementById('waste-period').value;
+  const itemMeta = {};
+  allItems.forEach(i => itemMeta[i.item_id] = i);
+
+  const wasteLogs = allLogs.filter(l => l.action === 'OUT' && withinPeriod(l.logged_at, days) && WASTE_PATTERN.test(l.reason || ''));
+  const totalOut = allLogs.filter(l => l.action === 'OUT' && withinPeriod(l.logged_at, days))
+    .reduce((s, l) => s + Number(l.quantity || 0), 0);
+  const totalWasted = wasteLogs.reduce((s, l) => s + Number(l.quantity || 0), 0);
+  const pctOfOut = totalOut > 0 ? Math.round((totalWasted / totalOut) * 100) : 0;
+
+  const byItem = {};
+  wasteLogs.forEach(l => { byItem[l.item_name] = (byItem[l.item_name] || 0) + Number(l.quantity || 0); });
+  const topWasted = Object.entries(byItem).sort((a,b) => b[1]-a[1])[0];
+
+  document.getElementById('wastage-summary').innerHTML = `
+    <div class="summary-stat danger"><div class="s-label">Total Wasted</div><div class="s-value">${totalWasted.toLocaleString()}</div><div class="s-sub">units lost</div></div>
+    <div class="summary-stat danger"><div class="s-label">Wastage Events</div><div class="s-value">${wasteLogs.length.toLocaleString()}</div><div class="s-sub">logged incidents</div></div>
+    <div class="summary-stat accent"><div class="s-label">% of Stock Out</div><div class="s-value">${pctOfOut}%</div><div class="s-sub">of all outgoing stock</div></div>
+    <div class="summary-stat primary"><div class="s-label">Most Wasted Item</div><div class="s-value" style="font-size:15px;">${topWasted ? topWasted[0] : '—'}</div><div class="s-sub">${topWasted ? topWasted[1].toLocaleString()+' units' : 'No wastage logged'}</div></div>
+  `;
+
+  document.getElementById('waste-tbody').innerHTML = wasteLogs.length ? wasteLogs.slice().sort((a,b) => new Date(b.logged_at)-new Date(a.logged_at)).map(l => {
+    const meta = itemMeta[l.item_id];
+    return `
+    <tr>
+      <td><strong>${l.item_name}</strong></td>
+      <td>${meta ? `<span class="badge badge-${meta.category.toLowerCase()}">${meta.category}</span>` : '—'}</td>
+      <td style="color:var(--danger);font-weight:600">${l.quantity}</td>
+      <td style="font-size:12.5px;color:var(--gray-600)">${l.unit}</td>
+      <td style="font-size:12.5px">${l.reason || '—'}</td>
+      <td style="font-size:12.5px;color:var(--gray-600)">${l.performed_by || '—'}</td>
+      <td style="font-size:12.5px;color:var(--gray-600)">${fmt(l.logged_at)}</td>
+    </tr>
+  `; }).join('') : '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">🗑️</div><p>No wastage logged in this period</p></div></td></tr>';
+}
+
+/* ---------------- INIT ---------------- */
+loaded.stock = true;
+loadReport();
+</script>
+</body>
+</html>
