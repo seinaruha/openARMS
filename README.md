@@ -15,10 +15,11 @@ nicer frontend
  -navigation between pages  
  -actual front end that isnt a basic form + table  
 get sign in/out working  
+get alerts (push notifications) working  
 fix issues with inventory_movements.php (fetching items not returning anything)  
-update db to align with suggested changes  
 
 
 
 would be nice (but not needed for project completion):  
 donator front end (donators should be able to track donated items)  
+google sms/email alerts  
