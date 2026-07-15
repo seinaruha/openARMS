@@ -1,0 +1,74 @@
+# ============================================
+# openARMS Git Ignore
+# ============================================
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.*.local
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+error_log
+access_log
+
+# Temporary files
+tmp/
+temp/
+cache/
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+
+# Database dumps (keep schema, ignore data)
+database/*.sql
+!database/schema.sql
+
+# Composer (if used)
+vendor/
+composer.lock
+
+# Node modules (if any frontend build tools)
+node_modules/
+npm-debug.log*
+
+# Build outputs
+dist/
+build/
+
+# XAMPP specific
+htdocs/  # Don't commit the htdocs symlink/copy
+
+# Uploads directory (user uploads)
+public/uploads/
+public/files/
+
+# Session files
+sessions/
+*.session
+
+# PHP error reports (development)
+error_report/
+
+# Coverage reports
+coverage/
+.phpunit.result.cache
