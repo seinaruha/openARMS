@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock Logs</title>
+  <link rel="stylesheet" href="common.css">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="log.css">
+</head>
+<body>
+
+<div class="app">
+  <div id="sidebar-container"></div>
+  <main class="main">
+    <div class="topbar">
+      <div class="topbar-title">Stock Logs</div>
+      <div class="topbar-right">
+        <span style="font-size:13px;color:var(--gray-600);">Admin</span>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <select class="filter-select" id="log-action-filter" onchange="filterLogs()">
+            <option value="">All Actions</option>
+            <option value="IN">Stock In</option>
+            <option value="OUT">Stock Out</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" onclick="openAddLog()">+ Log Movement</button>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Item</th><th>Action</th><th>Qty</th><th>Unit</th><th>Reason</th><th>By</th><th>Date</th></tr>
+            </thead>
+            <tbody id="log-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-overlay" id="modal-log">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title">Log Stock Movement</h2>
+      <button class="modal-close" onclick="closeModal('modal-log')">×</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group full"><label>Item *</label>
+        <select id="log-item"><option value="">Select item...</option></select>
+      </div>
+      <div class="form-group"><label>Action *</label>
+        <select id="log-action">
+          <option value="IN">Stock In</option>
+          <option value="OUT">Stock Out</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Quantity *</label><input type="number" id="log-qty" min="0.1" step="0.1" placeholder="0"></div>
+      <div class="form-group full"><label>Reason</label><input type="text" id="log-reason" placeholder="e.g. Daily feeding, Donation, Restocked..."></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-log')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveLog()">Log Movement</button>
+    </div>
+  </div>
+</div>
+
+<script src="app-common.js"></script>
+<script src="log.js"></script>
+</body>
+</html>

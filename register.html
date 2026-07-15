@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Personnel Registration</title>
+  <link rel="stylesheet" href="common.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <div id="sidebar-container"></div>
+  <main class="main">
+    <div class="topbar">
+      <div class="topbar-title">Register Personnel</div>
+      <div class="topbar-right">
+        <span style="font-size:13px;color:var(--gray-600);">Manager only</span>
+      </div>
+    </div>
+    <div class="content">
+      <div class="card">
+        <div class="form-grid">
+          <div class="form-group full"><label>Full Name *</label><input type="text" id="person-name" placeholder="e.g. Maria Santos"></div>
+          <div class="form-group"><label>Username *</label><input type="text" id="person-username" placeholder="login username"></div>
+          <div class="form-group"><label>Password *</label><input type="password" id="person-password" placeholder="Minimum 8 characters"></div>
+          <div class="form-group"><label>Confirm Password *</label><input type="password" id="person-password-confirm" placeholder="Re-enter password"></div>
+          <div class="form-group"><label>Phone</label><input type="text" id="person-phone" placeholder="Optional contact number"></div>
+          <div class="form-group"><label>Role *</label>
+            <select id="person-role">
+              <option value="">Select role...</option>
+              <option value="superadmin">Superadmin</option>
+              <option value="shelter_manager">Shelter Manager</option>
+              <option value="staff">Staff</option>
+              <option value="volunteer">Volunteer</option>
+              <option value="auditor">Auditor</option>
+            </select>
+          </div>
+          <div class="form-group full"><label id="shelter-label">Shelter</label>
+            <select id="person-shelter"><option value="">Select shelter...</option></select>
+          </div>
+        </div>
+        <div class="modal-footer" style="justify-content:flex-start;padding:24px 24px 20px;">
+          <button class="btn btn-secondary" onclick="window.location.href='dashboard.html'">Cancel</button>
+          <button class="btn btn-primary" onclick="savePersonnel()">Create Personnel</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="app-common.js"></script>
+<script src="register.js"></script>
+</body>
+</html>

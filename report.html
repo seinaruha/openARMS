@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reports</title>
+  <link rel="stylesheet" href="common.css">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="report.css">
+</head>
+<body>
+
+<div class="app">
+  <div id="sidebar-container"></div>
+  <main class="main">
+    <div class="topbar">
+      <div class="topbar-title">Reports</div>
+      <div class="topbar-right">
+        <span style="font-size:13px;color:var(--gray-600);">Admin </span>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <select class="filter-select" id="rpt-shelter" onchange="loadReport()">
+            <option value="">All Shelters</option>
+          </select>
+        </div>
+        <button class="btn btn-secondary" onclick="printReport()">🖨️ Print Report</button>
+      </div>
+      <div class="card" id="report-card">
+        <div class="card-title">📊 Inventory Status Report</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Item</th><th>Category</th><th>Shelter</th><th>Qty</th><th>Unit</th><th>Min Stock</th><th>Expiry</th><th>Stock Status</th><th>Expiry Status</th></tr>
+            </thead>
+            <tbody id="rpt-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="app-common.js"></script>
+<script src="report.js"></script>
+</body>
+</html>

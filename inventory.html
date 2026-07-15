@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="common.css">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="inventory.css">
+  <title>Inventory</title>
+</head>
+<body>
+
+<div class="app">
+  <div id="sidebar-container"></div>
+  <main class="main">
+    <div class="topbar">
+      <div class="topbar-title">Inventory</div>
+      <div class="topbar-right">
+        <span style="font-size:13px;color:var(--gray-600);">Admin</span>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" placeholder="Search items..." id="inv-search" oninput="filterInventory()">
+          </div>
+          <select class="filter-select" id="inv-cat-filter" onchange="filterInventory()">
+            <option value="">All Categories</option>
+            <option value="Food">Food</option>
+            <option value="Medicine">Medicine</option>
+            <option value="Supplies">Supplies</option>
+          </select>
+          <select class="filter-select" id="inv-shelter-filter" onchange="filterInventory()">
+            <option value="">All Shelters</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" onclick="openAddItem()">+ Add Item</button>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Item</th><th>Category</th><th>Shelter</th><th>Stock Level</th>
+                <th>Unit</th><th>Expiry</th><th>Status</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="inv-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-overlay" id="modal-item">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title" id="item-modal-title">Add Item</h2>
+      <button class="modal-close" onclick="closeModal('modal-item')">×</button>
+    </div>
+    <div class="form-grid">
+      <input type="hidden" id="item-id">
+      <div class="form-group full"><label>Item Name *</label><input type="text" id="item-name" placeholder="e.g. Dog Food (Dry)"></div>
+      <div class="form-group"><label>Category *</label>
+        <select id="item-category">
+          <option value="Food">Food</option>
+          <option value="Medicine">Medicine</option>
+          <option value="Supplies">Supplies</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Unit *</label><input type="text" id="item-unit" placeholder="kg, pcs, btl..."></div>
+      <div class="form-group"><label>Current Quantity</label><input type="number" id="item-qty" value="0" min="0" step="0.1"></div>
+      <div class="form-group"><label>Minimum Stock Level</label><input type="number" id="item-min" value="10" min="0" step="0.1"></div>
+      <div class="form-group"><label>Expiry Date</label><input type="date" id="item-expiry"></div>
+      <div class="form-group"><label>Shelter</label>
+        <select id="item-shelter"><option value="">Select shelter...</option></select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-item')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveItem()">Save Item</button>
+    </div>
+  </div>
+</div>
+
+<script src="app-common.js"></script>
+<script src="inventory.js"></script>
+</body>
+</html>
