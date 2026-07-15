@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - openARMS</title>
+    <link rel="icon" type="image/png" href="assets/images/openARMS.png">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="assets/css/style.css">
+    
+    <style>
+        /* Login-specific styles */
+        .login-page {
+            min-height: 100vh;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            background: var(--gray-50);
+        }
+        
+        /* Branding side */
+        .login-brand {
+            background: linear-gradient(160deg, var(--primary) 0%, #144f38 100%);
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 60px 64px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .login-brand::before {
+            content: '';
+            position: absolute;
+            width: 340px;
+            height: 340px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.05);
+            top: -120px;
+            right: -100px;
+        }
+        
+        .login-brand::after {
+            content: '';
+            position: absolute;
+            width: 220px;
+            height: 220px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.04);
+            bottom: -80px;
+            left: -60px;
+        }
+        
+        .brand-logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            position: relative;
+            z-index: 1;
+            margin-bottom: 36px;
+        }
+        
+        .brand-logo img {
+            width: 80px;
+            height: 80px;
+            object-fit: contain;
+        }
+        
+        .brand-logo h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin: 0;
+        }
+        
+        .brand-logo p {
+            font-size: 14px;
+            opacity: 0.75;
+            margin: 4px 0 0 0;
+        }
+        
+        .login-brand h2 {
+            font-size: 32px;
+            font-weight: 700;
+            line-height: 1.3;
+            max-width: 400px;
+            position: relative;
+            z-index: 1;
+            margin-bottom: 16px;
+        }
+        
+        .brand-tagline {
+            font-size: 15px;
+            opacity: 0.85;
+            line-height: 1.6;
+            max-width: 380px;
+            position: relative;
+            z-index: 1;
+            margin-bottom: 40px;
+        }
+        
+        .brand-features {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .feature-item {
+            display: flex;
+            gap: 14px;
+            align-items: flex-start;
+        }
+        
+        .feature-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            flex-shrink: 0;
+            background: rgba(255,255,255,0.14);
+        }
+        
+        .feature-icon.accent { background: rgba(230,126,34,0.35); }
+        .feature-icon.warning { background: rgba(214,137,16,0.35); }
+        
+        .feature-text strong { display: block; font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+        .feature-text span { font-size: 13px; opacity: 0.8; line-height: 1.5; }
+        
+        /* Form side */
+        .login-form-side {
+            background: #f0f4f2;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 24px;
+        }
+        
+        .login-card {
+            background: #fff;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-lg);
+            padding: 42px 38px;
+            width: 100%;
+            max-width: 420px;
+        }
+        
+        .login-card h2 {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--gray-900);
+            margin-bottom: 6px;
+        }
+        
+        .login-subtitle {
+            font-size: 14px;
+            color: var(--gray-600);
+            margin-bottom: 30px;
+        }
+        
+        @media (max-width: 900px) {
+            .login-page { grid-template-columns: 1fr; }
+            .login-brand { display: none; }
+            .login-form-side { padding: 24px 18px; min-height: 100vh; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="login-page">
+    <!-- Branding Side -->
+    <div class="login-brand"> 
+        <div class="brand-logo">
+            <img src="assets/images/openARMS.png" alt="openARMS logo">
+            <div>
+                <h1>openARMS</h1>
+                <p>Shelter Resource Management</p>
+            </div>
+        </div>
+        <h2>Manage your shelter's resources, all in one place.</h2>
+        <p class="brand-tagline">Track inventory, donations, and supplies across your shelter with real-time visibility and smart alerts.</p>
+
+        <div class="brand-features">
+            <div class="feature-item">
+                <div class="feature-icon"><i class="bi bi-box-seam-fill"></i></div>
+                <div class="feature-text">
+                    <strong>Inventory Tracking</strong>
+                    <span>Monitor food, medicine and supplies in real time</span>
+                </div>
+            </div>
+            <div class="feature-item">
+                <div class="feature-icon warning"><i class="bi bi-bell-fill"></i></div>
+                <div class="feature-text">
+                    <strong>Smart Alerts</strong>
+                    <span>Get notified on low stock and expiring items</span>
+                </div>
+            </div>
+            <div class="feature-item">
+                <div class="feature-icon accent"><i class="bi bi-heart-fill"></i></div>
+                <div class="feature-text">
+                    <strong>Donation Records</strong>
+                    <span>Log incoming donations and supplier activity</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Form Side -->
+    <div class="login-form-side">
+        <div class="login-card">
+            <h2>Welcome back</h2>
+            <p class="login-subtitle">Sign in to your openARMS account</p>
+
+            <div class="error-banner" id="error-banner">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+                <span id="error-text"></span>
+            </div>
+
+            <form id="login-form" novalidate data-validate>
+                <div class="form-group">
+                    <label for="username">Username or Email</label>
+                    <input type="text" id="username" name="username" autocomplete="username" 
+                           class="form-control" placeholder="e.g. admin@shelter.ph" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <div class="input-group">
+                        <input type="password" id="password" name="password" autocomplete="current-password" 
+                               class="form-control" placeholder="Enter your password" required>
+                        <button type="button" class="input-group-btn toggle-password">Show</button>
+                    </div>
+                </div>
+
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px;">
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--gray-800);">
+                        <input type="checkbox" id="remember" style="width:auto;"> Remember me
+                    </label>
+                    <a href="#" style="font-size:13px; font-weight:600;" onclick="alert('Contact administrator to reset password.'); return false;">
+                        Forgot password?
+                    </a>
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="login-btn" style="width:100%; padding:12px;">
+                    <i class="bi bi-box-arrow-in-right"></i> Sign In
+                </button>
+            </form>
+
+            <p style="text-align:center; font-size:13px; color:var(--gray-600); margin-top:24px;">
+                Don't have an account? Contact your shelter administrator.
+            </p>
+        </div>
+        
+        <p style="text-align:center; font-size:12px; color:var(--gray-400); margin-top:24px;">
+            &copy; <?= date('Y') ?> openARMS — for authorized shelter staff only
+        </p>
+    </div>
+</div>
+
+<!-- Toast notification -->
+<div id="toast"></div>
+
+<script>
+// API endpoint - auto-detects current host (XAMPP compatible)
+const API = window.location.origin;
+
+// Check if already logged in
+if (localStorage.getItem('asrms_user') || sessionStorage.getItem('asrms_user')) {
+    window.location.href = 'pages/dashboard.php';
+}
+
+// Toast function
+function toast(msg, type = 'success') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'show ' + type;
+    setTimeout(() => t.className = '', 3000);
+}
+
+// Error display
+function showError(msg) {
+    document.getElementById('error-text').textContent = msg;
+    document.getElementById('error-banner').classList.add('show');
+}
+
+function hideError() {
+    document.getElementById('error-banner').classList.remove('show');
+}
+
+// Password toggle
+document.querySelector('.toggle-password').addEventListener('click', function() {
+    const pw = document.getElementById('password');
+    const isHidden = pw.type === 'password';
+    pw.type = isHidden ? 'text' : 'password';
+    this.textContent = isHidden ? 'Hide' : 'Show';
+});
+
+// Form submission
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    hideError();
+
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+    const remember = document.getElementById('remember').checked;
+    const btn = document.getElementById('login-btn');
+
+    if (!username || !password) {
+        showError('Enter your username and password.');
+        return;
+    }
+
+    // Loading state
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Signing in...';
+
+    try {
+        const res = await fetch(API + '/login.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+        
+        const data = await res.json();
+
+        if (!res.ok || data.error) {
+            showError(data.error || 'Incorrect username or password.');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-box-arrow-in-right"></i> Sign In';
+            return;
+        }
+
+        // Store user session
+        const storage = remember ? localStorage : sessionStorage;
+        storage.setItem('asrms_user', JSON.stringify(data.user));
+
+        toast('Signed in — redirecting...');
+        setTimeout(() => { window.location.href = 'pages/dashboard.php'; }, 600);
+
+    } catch (err) {
+        showError('Couldn\'t reach the server. Make sure XAMPP Apache is running.');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-box-arrow-in-right"></i> Sign In';
+    }
+});
+</script>
+
+</body>
+</html>
