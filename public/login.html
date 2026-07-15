@@ -265,8 +265,9 @@
 <div id="toast"></div>
 
 <script>
-// API endpoint - auto-detects current host (XAMPP compatible)
-const API = window.location.origin;
+// API endpoint - auto-detects current path (XAMPP compatible)
+// Gets the full base URL including subdirectory (e.g., http://localhost/openARMS)
+const API = window.location.origin + window.location.pathname.replace(/\/[^\/]*$/, '');
 
 // Check if already logged in
 if (localStorage.getItem('asrms_user') || sessionStorage.getItem('asrms_user')) {
