@@ -55,6 +55,12 @@ CREATE TABLE Shelters (
   updated_at      TIMESTAMP    NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
 );
 
+CREATE TABLE InventoryCategories (
+  category_id    INT AUTO_INCREMENT PRIMARY KEY,
+  category_name  VARCHAR(80) NOT NULL UNIQUE,
+  created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE PersonnelRoles (
   personnel_role_id INT AUTO_INCREMENT PRIMARY KEY,
   personnel_id       INT NOT NULL,

@@ -13,11 +13,12 @@ async function loadDonations() {
       api('/suppliers.php'),
       api('/inventory.php')
     ]);
-    allDonations = donData?.donations || [];
-    allShelters = shelterData?.shelters || [];
-    allSuppliers = supplierData?.suppliers || [];
-    allItems = itemData?.items || [];
-    renderDonations(allDonations);
+    allDonations = donData && donData.donations ? donData.donations : [];
+    allShelters = shelterData && shelterData.shelters ? shelterData.shelters : [];
+    allSuppliers = supplierData && supplierData.suppliers ? supplierData.suppliers : [];
+    allItems = itemData && itemData.items ? itemData.items : [];
+    populateDonationShelterFilters();
+    filterDonations();
   } catch (err) {
     toast(err.message, 'error');
   }
@@ -29,10 +30,10 @@ function renderDonations(rows) {
       <td><strong>${d.donor_name || '—'}</strong></td>
       <td>${d.item_name || '—'}</td>
       <td>${d.item_quantity != null ? fmtNumber(d.item_quantity) : '—'}</td>
-      <td style="color:var(--gray-600);font-size:13px">${d.shelter_name || '—'}</td>
-      <td style="color:var(--gray-600);font-size:13px">${d.supplier_name || 'Walk-in'}</td>
-      <td style="font-size:12.5px;color:var(--gray-600)">${fmt(d.received_date)}</td>
-      <td style="font-size:12.5px;color:var(--gray-600)">${d.receipt_notes || '—'}</td>
+      <td class="cell-muted">${d.shelter_name || '—'}</td>
+      <td class="cell-muted">${d.supplier_name || 'Walk-in'}</td>
+      <td class="cell-small">${fmt(d.received_date)}</td>
+      <td class="cell-small">${d.receipt_notes || '—'}</td>
       <td class="action-btns">
         <button class="btn btn-secondary" onclick="editDonation(${d.donation_id})">Edit</button>
         <button class="btn btn-danger" onclick="deleteDonation(${d.donation_id})">Delete</button>
@@ -43,7 +44,24 @@ function renderDonations(rows) {
 
 function filterDonations() {
   const q = document.getElementById('don-search').value.toLowerCase();
-  renderDonations(allDonations.filter(d => !q || (d.donor_name || '').toLowerCase().includes(q)));
+  const shelter = document.getElementById('don-shelter-filter').value;
+  renderDonations(allDonations.filter(d => {
+    const matchesQuery = !q || (d.donor_name || '').toLowerCase().includes(q);
+    const matchesShelter = !shelter || String(d.shelter_id) === shelter;
+    return matchesQuery && matchesShelter;
+  }));
+}
+
+function populateDonationShelterFilters() {
+  const assignedShelter = getAssignedShelterId();
+  const filter = document.getElementById('don-shelter-filter');
+  filter.innerHTML = '<option value="">All Shelters</option>' +
+    allShelters.map(s => `<option value="${s.shelter_id}">${s.shelter_name}</option>`).join('');
+  if (assignedShelter && allShelters.some(s => Number(s.shelter_id) === assignedShelter)) {
+    filter.value = String(assignedShelter);
+  } else {
+    filter.value = '';
+  }
 }
 
 function populateSelects() {
@@ -53,6 +71,49 @@ function populateSelects() {
     allSuppliers.map(s => `<option value="${s.supplier_id}">${s.supplier_name}</option>`).join('');
   document.getElementById('don-item').innerHTML = '<option value="">Select item...</option>' +
     allItems.map(i => `<option value="${i.item_id}">${i.name} (${i.unit})</option>`).join('');
+  document.getElementById('quick-item-shelter').innerHTML = '<option value="">Select shelter...</option>' +
+    allShelters.map(s => `<option value="${s.shelter_id}">${s.shelter_name}</option>`).join('');
+}
+
+function openQuickCreateItem() {
+  populateSelects();
+  document.getElementById('quick-item-name').value = '';
+  document.getElementById('quick-item-unit').value = '';
+  document.getElementById('quick-item-category').value = 'Food';
+  document.getElementById('quick-item-shelter').value = document.getElementById('don-shelter').value || '';
+  document.getElementById('modal-quick-item').classList.add('open');
+}
+
+async function saveQuickItem() {
+  const name = document.getElementById('quick-item-name').value.trim();
+  const unit = document.getElementById('quick-item-unit').value.trim();
+  const category = document.getElementById('quick-item-category').value;
+  const shelter_id = document.getElementById('quick-item-shelter').value;
+
+  if (!name || !unit || !shelter_id) {
+    return toast('Fill required fields to create the item', 'error');
+  }
+
+  try {
+    const payload = {
+      name,
+      unit,
+      category,
+      quantity: 0,
+      min_stock: 0,
+      shelter_id
+    };
+    const result = await api('/inventory.php', 'POST', payload);
+    if (result && result.item_id) {
+      allItems.push({ item_id: result.item_id, name, unit, category, shelter_id: Number(shelter_id) });
+      document.getElementById('don-item').innerHTML += `<option value="${result.item_id}">${name} (${unit})</option>`;
+      document.getElementById('don-item').value = result.item_id;
+      closeModal('modal-quick-item');
+      toast('Item created');
+    }
+  } catch (err) {
+    toast(err.message || 'Failed to create item', 'error');
+  }
 }
 
 function openAddDonation() {
@@ -123,7 +184,7 @@ async function saveDonation() {
       await api('/donations.php', 'POST', payload);
       toast('Donation recorded — inventory updated');
     }
-    closeModal('modal-donation');
+      closeModal('modal-donation');
     loadDonations();
   } catch (err) {
     toast(err.message, 'error');
@@ -141,12 +202,12 @@ async function deleteDonation(id) {
   }
 }
 
-function closeModal(id) {
-  document.getElementById(id).classList.remove('open');
-}
-
-document.querySelectorAll('.modal-overlay').forEach(m => {
-  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
-});
+window.openQuickCreateItem = openQuickCreateItem;
+window.saveQuickItem = saveQuickItem;
+window.openAddDonation = openAddDonation;
+window.saveDonation = saveDonation;
+window.editDonation = editDonation;
+window.deleteDonation = deleteDonation;
+window.filterDonations = filterDonations;
 
 loadDonations();

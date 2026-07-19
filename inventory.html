@@ -17,9 +17,7 @@
   <main class="main">
     <div class="topbar">
       <div class="topbar-title">Inventory</div>
-      <div class="topbar-right">
-        <span style="font-size:13px;color:var(--gray-600);">Admin</span>
-      </div>
+      <div class="topbar-right"></div>
     </div>
 
     <div class="content">
@@ -27,14 +25,12 @@
         <div class="toolbar-left">
           <div class="search-box">
             <span class="search-icon">🔍</span>
-            <input type="text" placeholder="Search items..." id="inv-search" oninput="filterInventory()">
+            <input type="text" placeholder="Search items" id="inv-search" oninput="filterInventory()">
           </div>
           <select class="filter-select" id="inv-cat-filter" onchange="filterInventory()">
             <option value="">All Categories</option>
-            <option value="Food">Food</option>
-            <option value="Medicine">Medicine</option>
-            <option value="Supplies">Supplies</option>
           </select>
+          <button class="btn btn-secondary" type="button" onclick="openCategoryModal()">+ Category</button>
           <select class="filter-select" id="inv-shelter-filter" onchange="filterInventory()">
             <option value="">All Shelters</option>
           </select>
@@ -58,6 +54,27 @@
   </main>
 </div>
 
+<div class="modal-overlay" id="modal-categories">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title">Manage Categories</h2>
+      <button class="modal-close" onclick="closeModal('modal-categories')">×</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group full"><label>New Category</label><input type="text" id="category-name" placeholder="Bedding"></div>
+      <div class="form-group full form-actions">
+        <button class="btn btn-primary" type="button" onclick="addCategory()">Add Category</button>
+      </div>
+      <div class="form-group full"><label>Existing Categories</label>
+        <div id="category-list" class="category-list"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-categories')">Close</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modal-item">
   <div class="modal">
     <div class="modal-header">
@@ -66,7 +83,7 @@
     </div>
     <div class="form-grid">
       <input type="hidden" id="item-id">
-      <div class="form-group full"><label>Item Name *</label><input type="text" id="item-name" placeholder="e.g. Dog Food (Dry)"></div>
+      <div class="form-group full"><label>Item Name *</label><input type="text" id="item-name" placeholder="Dog Food (Dry)"></div>
       <div class="form-group"><label>Category *</label>
         <select id="item-category">
           <option value="Food">Food</option>
@@ -74,17 +91,46 @@
           <option value="Supplies">Supplies</option>
         </select>
       </div>
-      <div class="form-group"><label>Unit *</label><input type="text" id="item-unit" placeholder="kg, pcs, btl..."></div>
-      <div class="form-group"><label>Current Quantity</label><input type="number" id="item-qty" value="0" min="0" step="0.1"></div>
-      <div class="form-group"><label>Minimum Stock Level</label><input type="number" id="item-min" value="10" min="0" step="0.1"></div>
+      <div class="form-group"><label>Unit *</label><input type="text" id="item-unit" placeholder="kg, pcs, bottle"></div>
+      <div class="form-group"><label>Quantity on Hand</label><input type="number" id="item-qty" value="0" min="0" step="0.1"></div>
+      <div class="form-group"><label>Reorder Level</label><input type="number" id="item-min" value="10" min="0" step="0.1"></div>
       <div class="form-group"><label>Expiry Date</label><input type="date" id="item-expiry"></div>
       <div class="form-group"><label>Shelter</label>
-        <select id="item-shelter"><option value="">Select shelter...</option></select>
+        <select id="item-shelter"><option value="">Choose shelter</option></select>
       </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('modal-item')">Cancel</button>
       <button class="btn btn-primary" onclick="saveItem()">Save Item</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-transfer">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title">Transfer Item</h2>
+      <button class="modal-close" onclick="closeModal('modal-transfer')">×</button>
+    </div>
+    <div class="form-grid">
+      <input type="hidden" id="transfer-item-id">
+      <div class="form-group full"><label>Item</label>
+        <div id="transfer-item-name" class="info-box"></div>
+      </div>
+      <div class="form-group"><label>From Shelter</label>
+        <div id="transfer-item-shelter" class="info-box"></div>
+      </div>
+      <div class="form-group"><label>Destination Shelter *</label>
+        <select id="transfer-destination"><option value="">Choose destination shelter</option></select>
+      </div>
+      <div class="form-group"><label>Quantity *</label><input type="number" id="transfer-qty" min="0.1" step="0.1" placeholder="0">
+        <small id="transfer-max-qty" class="help-text"></small>
+      </div>
+      <div class="form-group full"><label>Notes</label><input type="text" id="transfer-note" placeholder="Transfer reason or note"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-transfer')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveTransfer()">Transfer</button>
     </div>
   </div>
 </div>

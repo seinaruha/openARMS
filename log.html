@@ -15,9 +15,7 @@
   <main class="main">
     <div class="topbar">
       <div class="topbar-title">Stock Logs</div>
-      <div class="topbar-right">
-        <span style="font-size:13px;color:var(--gray-600);">Admin</span>
-      </div>
+      <div class="topbar-right"></div>
     </div>
 
     <div class="content">
@@ -27,6 +25,11 @@
             <option value="">All Actions</option>
             <option value="IN">Stock In</option>
             <option value="OUT">Stock Out</option>
+            <option value="TRANSFER">Transfer</option>
+            <option value="ADJUST">Adjust</option>
+          </select>
+          <select class="filter-select" id="log-shelter-filter" onchange="filterLogs()">
+            <option value="">All Shelters</option>
           </select>
         </div>
         <button class="btn btn-primary" onclick="openAddLog()">+ Log Movement</button>
@@ -35,7 +38,7 @@
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Item</th><th>Action</th><th>Qty</th><th>Unit</th><th>Reason</th><th>By</th><th>Date</th></tr>
+              <tr><th>Item</th><th>Action</th><th>Shelter</th><th>Qty</th><th>Unit</th><th>Reason</th><th>By</th><th>Date</th></tr>
             </thead>
             <tbody id="log-tbody"></tbody>
           </table>
@@ -53,7 +56,7 @@
     </div>
     <div class="form-grid">
       <div class="form-group full"><label>Item *</label>
-        <select id="log-item"><option value="">Select item...</option></select>
+        <select id="log-item"><option value="">Choose item</option></select>
       </div>
       <div class="form-group"><label>Action *</label>
         <select id="log-action">
@@ -62,7 +65,7 @@
         </select>
       </div>
       <div class="form-group"><label>Quantity *</label><input type="number" id="log-qty" min="0.1" step="0.1" placeholder="0"></div>
-      <div class="form-group full"><label>Reason</label><input type="text" id="log-reason" placeholder="e.g. Daily feeding, Donation, Restocked..."></div>
+      <div class="form-group full"><label>Reason</label><input type="text" id="log-reason" placeholder="Daily feeding, donation, restocking"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('modal-log')">Cancel</button>

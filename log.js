@@ -5,28 +5,59 @@ initSidebar();
 
 async function loadLogs() {
   const [logData, itemData] = await Promise.all([api('/inventory_movements.php'), api('/inventory.php')]);
-  allLogs = logData?.logs || [];
-  allItems = itemData?.items || [];
-  renderLogs(allLogs);
+  allLogs = logData && logData.logs ? logData.logs : [];
+  allItems = itemData && itemData.items ? itemData.items : [];
+  populateLogShelterFilters();
+  filterLogs();
 }
 
 function renderLogs(rows) {
   document.getElementById('log-tbody').innerHTML = rows.length ? rows.map(l => `
     <tr>
       <td><strong>${l.item_name}</strong></td>
-      <td><span class="badge badge-${l.action.toLowerCase()}">${l.action === 'IN' ? '↓ Stock In' : '↑ Stock Out'}</span></td>
+      <td><span class="badge badge-${l.action.toLowerCase()}">${l.action === 'IN' ? '↓ Stock In' : l.action === 'OUT' ? '↑ Stock Out' : l.action === 'TRANSFER' ? '↔ Transfer' : '⚙️ Adjust'}</span></td>
+      <td class="cell-small">${l.shelter_name || '—'}</td>
       <td>${fmtNumber(l.quantity)}</td>
-      <td style="font-size:12.5px;color:var(--gray-600)">${l.unit}</td>
-      <td style="font-size:12.5px">${l.reason || '—'}</td>
-      <td style="font-size:12.5px;color:var(--gray-600)">${l.performed_by || '—'}</td>
-      <td style="font-size:12.5px;color:var(--gray-600)">${fmt(l.logged_at)}</td>
+      <td class="cell-small">${l.unit}</td>
+      <td class="cell-regular">${l.reason || '—'}</td>
+      <td class="cell-small">${l.performed_by || '—'}</td>
+      <td class="cell-small">${fmt(l.logged_at)}</td>
     </tr>
   `).join('') : '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📋</div><p>No logs yet</p></div></td></tr>';
 }
 
 function filterLogs() {
   const act = document.getElementById('log-action-filter').value;
-  renderLogs(allLogs.filter(l => !act || l.action === act));
+  const shelter = document.getElementById('log-shelter-filter').value;
+  renderLogs(allLogs.filter(l => {
+    const matchesAction = !act || l.action === act;
+    const matchesShelter = !shelter || String(l.shelter_id) === shelter;
+    return matchesAction && matchesShelter;
+  }));
+}
+
+function populateLogShelterFilters() {
+  const assignedShelter = getAssignedShelterId();
+  const filter = document.getElementById('log-shelter-filter');
+  const shelterOptions = allLogs
+    .map(l => l.shelter_id ? { shelter_id: l.shelter_id, shelter_name: l.shelter_name || '' } : null)
+    .filter(Boolean)
+    .reduce((acc, item) => {
+      const key = String(item.shelter_id);
+      if (!acc.map.has(key)) {
+        acc.map.set(key, true);
+        acc.options.push(item);
+      }
+      return acc;
+    }, { map: new Map(), options: [] })
+    .options;
+  filter.innerHTML = '<option value="">All Shelters</option>' +
+    shelterOptions.map(s => `<option value="${s.shelter_id}">${s.shelter_name}</option>`).join('');
+  if (assignedShelter && shelterOptions.some(s => Number(s.shelter_id) === assignedShelter)) {
+    filter.value = String(assignedShelter);
+  } else {
+    filter.value = '';
+  }
 }
 
 function openAddLog() {
@@ -58,13 +89,5 @@ async function saveLog() {
     toast(err.message || 'Failed to log movement', 'error');
   }
 }
-
-function closeModal(id) {
-  document.getElementById(id).classList.remove('open');
-}
-
-document.querySelectorAll('.modal-overlay').forEach(m => {
-  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
-});
 
 loadLogs();

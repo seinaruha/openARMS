@@ -20,6 +20,9 @@ VALUES ('Acme Supplies', 'Jane Doe', 'jane@acme.example', '123 Acme Rd', 'Genera
 INSERT INTO Shelters (shelter_name, address, contact_person, contact_number, capacity, shelter_type, is_active)
 VALUES ('Central Shelter', '100 Main St', 'John Manager', '555-0100', 200, 'General', TRUE);
 
+INSERT INTO InventoryCategories (category_name)
+VALUES ('Food'), ('Medicine'), ('Supplies');
+
 INSERT INTO Personnel (personnel_name, username, password_hash, phone, is_active)
 VALUES ('Admin User', 'admin', '$6$F1YasHBf8pkdWVBH$a6YAUcTTfgwqaMTcS.BB0XxLGa6QoE.AJmpiVSBfIhOZ27NE/d1FdgLfRHwFFuQocimc.4dVQu2Rz2Qwe1VXT0', '555-0001', TRUE);
 

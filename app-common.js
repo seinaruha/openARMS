@@ -4,6 +4,27 @@ function getAuthHeaders() {
   return token ? { 'Authorization': 'Bearer ' + token } : {};
 }
 
+function getCurrentUser() {
+  const userJson = localStorage.getItem('asrms_user') || sessionStorage.getItem('asrms_user');
+  if (!userJson) return null;
+  try {
+    return JSON.parse(userJson);
+  } catch (e) {
+    return null;
+  }
+}
+
+function getAssignedShelterId() {
+  const user = getCurrentUser();
+  if (!user) return null;
+  const shelter = user.assigned_shelter || null;
+  if (!shelter) return null;
+  if (typeof shelter === 'object') {
+    return shelter.shelter_id ? Number(shelter.shelter_id) : null;
+  }
+  return Number(shelter) || null;
+}
+
 function toast(msg, type='success') {
   const t = document.getElementById('toast');
   if (!t) return;
@@ -20,7 +41,30 @@ function ensureToastElement() {
 }
 
 if (typeof document !== 'undefined') {
-  document.addEventListener('DOMContentLoaded', ensureToastElement);
+  document.addEventListener('DOMContentLoaded', () => {
+    ensureToastElement();
+    initModalOverlays();
+  });
+}
+
+// Modal helpers: centralize modal behavior so page scripts don't duplicate this logic.
+function closeModal(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove('open');
+}
+
+function initModalOverlays() {
+  try {
+    document.querySelectorAll('.modal-overlay').forEach(m => {
+      // ensure we don't attach duplicates
+      if (m.__modal_inited) return;
+      m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
+      m.__modal_inited = true;
+    });
+  } catch (e) {
+    // ignore if DOM not ready or selectors not available
+  }
 }
 
 function fmt(d) {
@@ -76,11 +120,40 @@ function initSidebar() {
         let user = {};
         try { user = JSON.parse(userJson); } catch (e) { user = { username: userJson }; }
         const su = document.getElementById('sidebar-user');
-        if (su) su.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><div style="font-size:13px">${user.display_name||user.username||'User'}</div><button id="sidebar-logout" class="btn" style="font-size:12px;">Logout</button></div>`;
+        if (su) {
+          let roleDisplay = 'User';
+          let shelterDisplay = 'NULL';
+          try {
+            const rolesArr = Array.isArray(user.roles) ? user.roles.map(r => (r.role_name || r).toString()) .filter(Boolean) : [];
+            if (rolesArr.length) {
+              if (rolesArr.includes('superadmin')) roleDisplay = 'Administrator';
+              else if (rolesArr.includes('shelter_manager')) roleDisplay = 'Shelter Manager';
+              else roleDisplay = rolesArr[0].replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            }
+            if (user.assigned_shelter && user.assigned_shelter.shelter_name) {
+              shelterDisplay = user.assigned_shelter.shelter_name;
+            }
+          } catch (e) {
+            roleDisplay = 'User';
+          }
+          su.innerHTML = `
+            <div class="sidebar-user-container">
+              <div class="sidebar-user-wrap">
+                <div class="sidebar-user-info">
+                  <div class="sidebar-user-name">${user.display_name||user.username||'User'}</div>
+                  <div class="sidebar-user-meta">${roleDisplay} • ${shelterDisplay}</div>
+                </div>
+                <button id="sidebar-logout" class="btn sidebar-logout">Logout</button>
+              </div>
+            </div>
+          `;
+        }
         const lb = document.getElementById('sidebar-logout');
         if (lb) lb.addEventListener('click', () => { localStorage.removeItem('asrms_user'); localStorage.removeItem('asrms_token'); sessionStorage.removeItem('asrms_user'); sessionStorage.removeItem('asrms_token'); window.location.href = 'login.html'; });
+
+        // no role-based hiding in the sidebar; access is enforced server-side
       }
     });
 }
 
-window.appCommon = { getAuthHeaders, toast, fmt, fmtNumber, api, initSidebar };
+window.appCommon = { getAuthHeaders, toast, fmt, fmtNumber, api, initSidebar, getCurrentUser, getAssignedShelterId, closeModal, initModalOverlays };

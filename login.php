@@ -27,7 +27,7 @@ if (!$username || !$password) {
 
 try {
     $stmt = $pdo->prepare(
-        'SELECT personnel_id, personnel_name, username, password_hash 
+        'SELECT personnel_id, personnel_name, username, password_hash, is_active
          FROM Personnel 
          WHERE username = :username 
          LIMIT 1'
@@ -50,6 +50,12 @@ try {
     if (!$passwordValid) {
         http_response_code(401);
         echo json_encode(['error' => 'Incorrect password']);
+        exit;
+    }
+
+    if (isset($user['is_active']) && !$user['is_active']) {
+        http_response_code(403);
+        echo json_encode(['error' => 'Account is inactive. Contact your administrator.']);
         exit;
     }
 

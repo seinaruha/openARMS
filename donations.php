@@ -6,22 +6,46 @@ $method = getMethod();
 $id = getQuery('id');
 $body = getJsonBody();
 
-function buildDonationLineRows($body, $donation_id) {
+function buildDonationLineRows($body, $donation_id = null) {
     $lines = $body['lines'] ?? [];
     if (!empty($body['item_id']) && isset($body['item_quantity'])) {
-        $lines = [[ 'item_id' => $body['item_id'], 'item_quantity' => $body['item_quantity'] ]];
+        $lines = [[
+            'item_id' => $body['item_id'],
+            'item_quantity' => $body['item_quantity'],
+            'line_notes' => $body['line_notes'] ?? null
+        ]];
     }
     $rows = [];
     foreach ($lines as $ln) {
-        if (empty($ln['item_id'])) continue;
-        $rows[] = [
-            'donation_id' => $donation_id,
-            'item_id' => $ln['item_id'],
-            'item_quantity' => $ln['item_quantity'] ?? 0,
+        if (empty($ln['item_id']) || !isset($ln['item_quantity'])) continue;
+        $quantity = (float)$ln['item_quantity'];
+        if ($quantity <= 0) continue;
+        $row = [
+            'item_id' => (int)$ln['item_id'],
+            'item_quantity' => $quantity,
             'line_notes' => $ln['line_notes'] ?? null
         ];
+        if ($donation_id !== null) {
+            $row['donation_id'] = $donation_id;
+        }
+        $rows[] = $row;
     }
     return $rows;
+}
+
+function validateDonationLineRows($rows) {
+    if (empty($rows)) {
+        respondError('Donation lines are required', 400);
+    }
+    foreach ($rows as $row) {
+        if (empty($row['item_id']) || $row['item_quantity'] <= 0) {
+            respondError('Donation item and quantity are required', 400);
+        }
+        $item = fetchOne('SELECT item_id FROM Items WHERE item_id = :id AND is_active = 1', ['id' => $row['item_id']]);
+        if (!$item) {
+            respondError('Invalid item selected', 400);
+        }
+    }
 }
 
 try {
@@ -33,7 +57,7 @@ try {
                  FROM Donations d
                  LEFT JOIN Shelters s ON d.shelter_id = s.shelter_id
                  LEFT JOIN Suppliers su ON d.supplier_id = su.supplier_id
-                 WHERE d.donation_id = :id AND d.is_active = 1',
+                 WHERE d.donation_id = :id',
                 ['id' => $id]
             );
 
@@ -57,9 +81,7 @@ try {
                     d.supplier_id,
                     d.received_date,
                     d.receipt_notes,
-                    d.is_active,
                     d.created_at,
-                    d.updated_at,
                     s.shelter_name,
                     su.supplier_name,
                     dl.item_id,
@@ -78,7 +100,7 @@ try {
                  )
              ) dl ON dl.donation_id = d.donation_id
              LEFT JOIN Items i ON i.item_id = dl.item_id
-             WHERE d.is_active = 1';
+             WHERE 1=1';
 
         $params = [];
         if (!isGlobalReader()) {
@@ -114,13 +136,8 @@ try {
             return respondError('Access denied', 403);
         }
 
-        if (empty($lines) && !empty($body['item_id']) && isset($body['item_quantity'])) {
-            $lines = [[ 'item_id' => $body['item_id'], 'item_quantity' => $body['item_quantity'] ]];
-        }
-
-        if (empty($lines)) {
-            return respondError('Donation lines are required', 400);
-        }
+        $rows = buildDonationLineRows($body);
+        validateDonationLineRows($rows);
 
         $donation_id = null;
         tryTransaction(function() use ($body, $donor_name, $description, $shelter_id, $supplier_id, $received_date, $receipt_notes, &$donation_id) {
@@ -174,11 +191,10 @@ try {
             return respondError('Access denied', 403);
         }
 
-        if (empty($lines) && !empty($body['item_id']) && isset($body['item_quantity'])) {
-            $lines = [[ 'item_id' => $body['item_id'], 'item_quantity' => $body['item_quantity'] ]];
-        }
+        $rows = buildDonationLineRows($body);
+        validateDonationLineRows($rows);
 
-        tryTransaction(function() use ($body, $donation_id, $donor_name, $description, $shelter_id, $supplier_id, $received_date, $receipt_notes, $lines, $existingDon) {
+        tryTransaction(function() use ($body, $donation_id, $donor_name, $description, $shelter_id, $supplier_id, $received_date, $receipt_notes, $rows, $existingDon) {
             global $pdo;
 
             $oldLines = fetchAll('SELECT item_id, item_quantity FROM DonationLines WHERE donation_id = :id', ['id' => $donation_id]);
@@ -241,7 +257,7 @@ try {
                 ]);
             }
             execute('DELETE FROM DonationLines WHERE donation_id = :donation_id', ['donation_id' => $donation_id]);
-            execute('UPDATE Donations SET is_active = 0, deleted_at = NOW() WHERE donation_id = :donation_id', ['donation_id' => $donation_id]);
+            execute('DELETE FROM Donations WHERE donation_id = :donation_id', ['donation_id' => $donation_id]);
             return true;
         });
 

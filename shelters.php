@@ -31,6 +31,8 @@ if ($method === 'GET') {
     }
 
 } elseif ($method === 'POST') {
+    requireAuth();
+    ensureRoles(['superadmin']);
     validateRequired($body, ['shelter_name']);
 
     $shelter_name = sanitize($body['shelter_name']);
@@ -61,6 +63,8 @@ if ($method === 'GET') {
     }
 
 } elseif ($method === 'PUT') {
+    requireAuth();
+    ensureRoles(['superadmin']);
     requireParam($id, 'Shelter ID');
     $body = requireJsonBody();
 
@@ -82,6 +86,8 @@ if ($method === 'GET') {
     respondSuccess(['success' => true]);
 
 } elseif ($method === 'DELETE') {
+    requireAuth();
+    ensureRoles(['superadmin']);
     requireParam($id, 'Shelter ID');
     softDelete('Shelters', 'shelter_id', $id);
     respondSuccess(['success' => true]);

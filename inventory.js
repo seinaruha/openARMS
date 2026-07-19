@@ -1,6 +1,7 @@
 
 const API = '';
-let allItems = [], allShelters = [];
+const DEFAULT_CATEGORIES = ['Food', 'Medicine', 'Supplies'];
+let allItems = [], allShelters = [], allCategories = [];
 initSidebar();
 
 function stockBadge(qty, min) {
@@ -17,7 +18,7 @@ function expiryBadge(d) {
   const diff = Math.floor((exp - today) / 86400000);
   if (diff < 0) return `<span class="badge badge-expired">Expired</span>`;
   if (diff <= 30) return `<span class="badge badge-expiring">Expires in ${diff}d</span>`;
-  return `<span style="font-size:12.5px;color:var(--gray-600)">${fmt(d)}</span>`;
+  return `<span class="cell-small">${fmt(d)}</span>`;
 }
 
 function progressBar(qty, min) {
@@ -28,9 +29,18 @@ function progressBar(qty, min) {
 }
 
 async function loadInventory() {
-  const [itemData, shelterData] = await Promise.all([api('/inventory.php'), api('/shelters.php')]);
-  allItems = itemData?.items || [];
-  allShelters = shelterData?.shelters || [];
+  const [itemData, shelterData, categoryData] = await Promise.all([
+    api('/inventory.php'),
+    api('/shelters.php'),
+    api('/inventory_categories.php')
+  ]);
+  allItems = itemData && itemData.items ? itemData.items : [];
+  allShelters = shelterData && shelterData.shelters ? shelterData.shelters : [];
+  allCategories = categoryData && categoryData.categories ? categoryData.categories : [];
+  if (!allCategories.length) {
+    allCategories = DEFAULT_CATEGORIES.map(name => ({ category_id: null, category_name: name }));
+  }
+  populateCategoryOptions();
   populateShelterFilters();
   renderInventory(allItems);
 }
@@ -38,16 +48,17 @@ async function loadInventory() {
 function renderInventory(items) {
   document.getElementById('inv-tbody').innerHTML = items.length ? items.map(i => `
     <tr>
-      <td><strong style="font-size:13.5px">${i.name}</strong></td>
+      <td><strong class="strong-regular">${i.name}</strong></td>
       <td><span class="badge badge-${i.category.toLowerCase()}">${i.category}</span></td>
-      <td style="font-size:13px;color:var(--gray-600)">${i.shelter_name || '—'}</td>
+      <td class="cell-muted">${i.shelter_name || '—'}</td>
       <td>${progressBar(i.quantity, i.min_stock)}</td>
-      <td style="font-size:13px">${i.unit}</td>
+      <td class="cell-regular">${i.unit}</td>
       <td>${expiryBadge(i.expiry_date)}</td>
       <td>${stockBadge(i.quantity, i.min_stock)}</td>
       <td>
+        <button class="btn btn-sm btn-secondary" onclick="openTransfer(${i.item_id})">Transfer</button>
         <button class="btn btn-sm btn-secondary" onclick="editItem(${i.item_id})">Edit</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteItem(${i.item_id},'${i.name}')">Del</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteItem(${i.item_id}, ${JSON.stringify(i.name)})">Del</button>
       </td>
     </tr>
   `).join('') : '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📦</div><p>No items found</p></div></td></tr>';
@@ -64,6 +75,71 @@ function filterInventory() {
   ));
 }
 
+function populateCategoryOptions(selectedCategory) {
+  const filter = document.getElementById('inv-cat-filter');
+  if (filter) {
+    filter.innerHTML = '<option value="">All Categories</option>' +
+      allCategories.map(c => `<option value="${c.category_name}">${c.category_name}</option>`).join('');
+    if (selectedCategory && allCategories.some(c => c.category_name === selectedCategory)) {
+      filter.value = selectedCategory;
+    }
+  }
+  const categorySelect = document.getElementById('item-category');
+  if (categorySelect) {
+    categorySelect.innerHTML = allCategories.map(c => `<option value="${c.category_name}">${c.category_name}</option>`).join('');
+  }
+}
+
+function openCategoryModal() {
+  document.getElementById('category-name').value = '';
+  refreshCategoryList();
+  document.getElementById('modal-categories').classList.add('open');
+}
+
+function refreshCategoryList() {
+  const list = document.getElementById('category-list');
+  if (!list) return;
+  list.innerHTML = allCategories.map(cat => `
+    <div class="list-row">
+      <span>${cat.category_name}</span>
+      ${cat.category_id ? `<button class="btn btn-sm btn-danger" type="button" onclick="removeCategory(${cat.category_id})">Remove</button>` : ''}
+    </div>
+  `).join('');
+}
+
+async function addCategory() {
+  const input = document.getElementById('category-name');
+  if (!input) return;
+  const categoryName = input.value.trim();
+  if (!categoryName) return toast('Enter a category name', 'error');
+  if (allCategories.some(c => c.category_name === categoryName)) return toast('Category already exists', 'error');
+  try {
+    const result = await api('/inventory_categories.php', 'POST', { category_name: categoryName });
+    if (result && result.category) {
+      allCategories.push(result.category);
+      populateCategoryOptions(categoryName);
+      refreshCategoryList();
+      input.value = '';
+      toast('Category added');
+    }
+  } catch (err) {
+    toast(err.message || 'Failed to add category', 'error');
+  }
+}
+
+async function removeCategory(categoryId) {
+  if (categoryId === null) return toast('Cannot remove this category', 'error');
+  try {
+    await api('/inventory_categories.php', 'DELETE', { category_id: categoryId });
+    allCategories = allCategories.filter(c => c.category_id !== categoryId);
+    populateCategoryOptions();
+    refreshCategoryList();
+    toast('Category removed');
+  } catch (err) {
+    toast(err.message || 'Failed to remove category', 'error');
+  }
+}
+
 function populateShelterFilters() {
   ['inv-shelter-filter'].forEach(id => {
     const el = document.getElementById(id);
@@ -71,7 +147,7 @@ function populateShelterFilters() {
     el.innerHTML = '<option value="">All Shelters</option>' +
       allShelters.map(s => `<option value="${s.shelter_id}">${s.shelter_name}</option>`).join('');
   });
-  ['item-shelter'].forEach(id => {
+  ['item-shelter','transfer-destination'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.innerHTML = '<option value="">Select shelter...</option>' +
@@ -133,12 +209,59 @@ async function deleteItem(id, name) {
   loadInventory();
 }
 
-function closeModal(id) {
-  document.getElementById(id).classList.remove('open');
+function openTransfer(id) {
+  const item = allItems.find(i => i.item_id === id);
+  if (!item) return;
+  document.getElementById('transfer-item-id').value = id;
+  document.getElementById('transfer-item-name').textContent = item.name;
+  document.getElementById('transfer-item-shelter').textContent = item.shelter_name || '—';
+  const destination = document.getElementById('transfer-destination');
+  if (destination) {
+    destination.innerHTML = '<option value="">Select destination shelter...</option>' +
+      allShelters
+        .filter(s => s.shelter_id !== item.shelter_id)
+        .map(s => `<option value="${s.shelter_id}">${s.shelter_name}</option>`)
+        .join('');
+  }
+  document.getElementById('transfer-qty').value = '';
+  document.getElementById('transfer-max-qty').textContent = `Available: ${fmtNumber(item.quantity)}`;
+  document.getElementById('transfer-note').value = '';
+  document.getElementById('modal-transfer').classList.add('open');
 }
 
-document.querySelectorAll('.modal-overlay').forEach(m => {
-  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
-});
+async function saveTransfer() {
+  const itemId = parseInt(document.getElementById('transfer-item-id').value, 10);
+  const item = allItems.find(i => i.item_id === itemId);
+  const destinationShelterId = parseInt(document.getElementById('transfer-destination').value, 10);
+  const quantity = parseFloat(document.getElementById('transfer-qty').value);
+  const notes = document.getElementById('transfer-note').value.trim() || null;
+
+  if (!itemId || !destinationShelterId || !quantity || quantity <= 0) {
+    return toast('Select destination and quantity to transfer', 'error');
+  }
+  if (!item) return toast('Transfer item not found', 'error');
+  if (destinationShelterId === item.shelter_id) {
+    return toast('Destination shelter cannot be the same as source shelter', 'error');
+  }
+  if (quantity > item.quantity) {
+    return toast('Transfer quantity cannot exceed available stock', 'error');
+  }
+
+  try {
+    await api('/inventory_movements.php', 'POST', {
+      item_id: itemId,
+      transaction_type: 'TRANSFER',
+      quantity,
+      shelter_id: item.shelter_id,
+      destination_shelter_id: destinationShelterId,
+      transaction_notes: notes
+    });
+    closeModal('modal-transfer');
+    toast('Transfer recorded');
+    loadInventory();
+  } catch (err) {
+    toast(err.message || 'Failed to transfer item', 'error');
+  }
+}
 
 loadInventory();

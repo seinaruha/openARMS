@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="common.css">
+  <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="dashboard.css">
 </head>
 <body>
@@ -17,7 +18,7 @@
     <div class="topbar">
       <div class="topbar-title">Dashboard</div>
       <div class="topbar-right">
-        <span id="alert-count-badge" class="alert-badge" style="display:none">0 alerts</span>
+        <span id="alert-count-badge" class="alert-badge hidden">0 alerts</span>
         <div class="avatar">A</div>
       </div>
     </div>
@@ -66,7 +67,7 @@
         </div>
       </div>
 
-      <div class="grid-3" style="margin-bottom:20px;">
+      <div class="grid-3 mb-20">
         <div class="card">
           <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg> Stock by Category</div>
           <div id="category-breakdown"></div>

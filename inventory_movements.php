@@ -145,11 +145,112 @@ if ($method === 'GET') {
         respondError('A valid personnel record is required for inventory movement', 400);
     }
 
-    if (!isSuperadmin() && !canAccessShelter($shelter_id)) {
-        respondError('Access denied', 403);
+    $destination_shelter_id = !empty($body['destination_shelter_id']) ? (int)$body['destination_shelter_id'] : null;
+    if ($transaction_type === 'TRANSFER') {
+        if (!$destination_shelter_id) {
+            respondError('Destination shelter is required for transfer', 400);
+        }
+        if ($destination_shelter_id === $shelter_id) {
+            respondError('Destination shelter must be different from the source shelter', 400);
+        }
     }
 
-    $result = tryTransaction(function() use ($item_id, $shelter_id, $quantity, $transaction_type, $personnel_id, $transaction_notes) {
+    if (!isSuperadmin()) {
+        if (!canAccessShelter($shelter_id)) {
+            respondError('Access denied', 403);
+        }
+        if ($transaction_type === 'TRANSFER' && !canAccessShelter($destination_shelter_id)) {
+            respondError('Access denied for destination shelter', 403);
+        }
+    }
+
+    $result = tryTransaction(function() use ($item_id, $shelter_id, $quantity, $transaction_type, $personnel_id, $transaction_notes, $destination_shelter_id) {
+        if ($transaction_type === 'TRANSFER') {
+            $sourceItem = fetchOne('SELECT item_name, item_type, unit, received_date, expiry_date, notes, item_properties, on_hand_qty FROM Items WHERE item_id = :item_id LIMIT 1', ['item_id' => $item_id]);
+            if (!$sourceItem) {
+                respondError('Source item not found', 404);
+            }
+            if ($sourceItem['on_hand_qty'] < $quantity) {
+                respondError('Not enough stock to transfer', 400);
+            }
+
+            $destinationShelter = fetchOne('SELECT shelter_name FROM Shelters WHERE shelter_id = :shelter_id LIMIT 1', ['shelter_id' => $destination_shelter_id]);
+            if (!$destinationShelter) {
+                respondError('Destination shelter not found', 404);
+            }
+
+            $sourceShelter = fetchOne('SELECT shelter_name FROM Shelters WHERE shelter_id = :shelter_id LIMIT 1', ['shelter_id' => $shelter_id]);
+            $sourceShelterName = $sourceShelter['shelter_name'] ?? 'Unknown';
+            $destShelterName = $destinationShelter['shelter_name'];
+
+            execute('UPDATE Items SET on_hand_qty = on_hand_qty - :quantity WHERE item_id = :item_id', ['quantity' => $quantity, 'item_id' => $item_id]);
+
+            $destinationItem = fetchOne(
+                'SELECT item_id, on_hand_qty FROM Items WHERE shelter_id = :shelter_id AND item_name = :item_name AND item_type = :item_type AND unit = :unit AND expiry_date <=> :expiry_date LIMIT 1',
+                [
+                    'shelter_id' => $destination_shelter_id,
+                    'item_name' => $sourceItem['item_name'],
+                    'item_type' => $sourceItem['item_type'],
+                    'unit' => $sourceItem['unit'],
+                    'expiry_date' => $sourceItem['expiry_date']
+                ]
+            );
+
+            if ($destinationItem) {
+                execute('UPDATE Items SET on_hand_qty = on_hand_qty + :quantity, initial_qty = initial_qty + :quantity WHERE item_id = :item_id', [
+                    'quantity' => $quantity,
+                    'item_id' => $destinationItem['item_id']
+                ]);
+                $destinationItemId = $destinationItem['item_id'];
+            } else {
+                $insertResult = execute(
+                    'INSERT INTO Items (shelter_id, item_name, item_type, unit, item_properties, on_hand_qty, initial_qty, received_date, expiry_date, notes)
+                     VALUES (:shelter_id, :item_name, :item_type, :unit, :item_properties, :on_hand_qty, :initial_qty, :received_date, :expiry_date, :notes)',
+                    [
+                        'shelter_id' => $destination_shelter_id,
+                        'item_name' => $sourceItem['item_name'],
+                        'item_type' => $sourceItem['item_type'],
+                        'unit' => $sourceItem['unit'],
+                        'item_properties' => $sourceItem['item_properties'],
+                        'on_hand_qty' => $quantity,
+                        'initial_qty' => $quantity,
+                        'received_date' => $sourceItem['received_date'] ?: date('Y-m-d'),
+                        'expiry_date' => $sourceItem['expiry_date'],
+                        'notes' => $sourceItem['notes']
+                    ]
+                );
+                $destinationItemId = $insertResult['last_insert_id'];
+            }
+
+            execute(
+                'INSERT INTO InventoryLogs (transaction_date, item_id, shelter_id, quantity, transaction_type, personnel_id, transaction_notes)
+                 VALUES (CURDATE(), :item_id, :shelter_id, :quantity, :transaction_type, :personnel_id, :transaction_notes)',
+                [
+                    'item_id' => $item_id,
+                    'shelter_id' => $shelter_id,
+                    'quantity' => $quantity,
+                    'transaction_type' => 'TRANSFER',
+                    'personnel_id' => $personnel_id,
+                    'transaction_notes' => ($transaction_notes ? $transaction_notes . ' ' : '') . 'Transfer to ' . $destShelterName
+                ]
+            );
+
+            $insertResult = execute(
+                'INSERT INTO InventoryLogs (transaction_date, item_id, shelter_id, quantity, transaction_type, personnel_id, transaction_notes)
+                 VALUES (CURDATE(), :item_id, :shelter_id, :quantity, :transaction_type, :personnel_id, :transaction_notes)',
+                [
+                    'item_id' => $destinationItemId,
+                    'shelter_id' => $destination_shelter_id,
+                    'quantity' => $quantity,
+                    'transaction_type' => 'TRANSFER',
+                    'personnel_id' => $personnel_id,
+                    'transaction_notes' => ($transaction_notes ? $transaction_notes . ' ' : '') . 'Transfer from ' . $sourceShelterName
+                ]
+            );
+
+            return ['last_insert_id' => null];
+        }
+
         $insertResult = execute(
             'INSERT INTO InventoryLogs (transaction_date, item_id, shelter_id, quantity, transaction_type, personnel_id, transaction_notes)
              VALUES (CURDATE(), :item_id, :shelter_id, :quantity, :transaction_type, :personnel_id, :transaction_notes)',

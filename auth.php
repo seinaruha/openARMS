@@ -32,7 +32,7 @@ try {
         global $JWT_SECRET;
         $expected = hash_hmac('sha256', "$b64h.$b64p", $JWT_SECRET, true);
         if (hash_equals($expected, $sig) && (empty($payload['exp']) || $payload['exp'] > time())) {
-            $stmt = $pdo->prepare('SELECT personnel_id, personnel_name, username FROM Personnel WHERE personnel_id = :id LIMIT 1');
+            $stmt = $pdo->prepare('SELECT personnel_id, personnel_name, username, is_active FROM Personnel WHERE personnel_id = :id LIMIT 1');
             $stmt->execute(['id' => $payload['sub']]);
             $personnel = $stmt->fetch();
         }
@@ -48,6 +48,13 @@ if (!$personnel) {
     http_response_code(401);
     header('Content-Type: application/json');
     echo json_encode(['error' => 'Session expired or invalid. Please log in again.']);
+    exit;
+}
+
+if (isset($personnel['is_active']) && !$personnel['is_active']) {
+    http_response_code(403);
+    header('Content-Type: application/json');
+    echo json_encode(['error' => 'Account inactive. Contact administrator.']);
     exit;
 }
 

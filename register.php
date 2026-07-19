@@ -1,127 +1,77 @@
 <?php
 
-require_once __DIR__ . '/auth.php';
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
-    echo json_encode(['error' => 'Method not allowed']);
-    exit;
+require_once __DIR__ . '/api-helper.php';
+
+$method = getMethod();
+if ($method !== 'POST') {
+    respondError('Method not allowed', 405);
 }
 
-$input = json_decode(file_get_contents('php://input'), true);
+requireAuth();
+ensureRoles(['superadmin','shelter_manager']);
 
-$shelterId      = $input['shelter_id'] ?? null;
-$personnelName  = trim($input['personnel_name'] ?? '');
-$role           = trim($input['role'] ?? '');
-$phone          = trim($input['phone'] ?? '');
-$username       = trim($input['username'] ?? '');
-$password       = $input['password'] ?? '';
+$body = requireJsonBody();
+validateRequired($body, ['personnel_name', 'username', 'password', 'role']);
 
-$allowedRoles = ['superadmin', 'shelter_manager'];
-$roleStmt = $pdo->prepare(
-    'SELECT r.role_name, pr.shelter_id
-     FROM PersonnelRoles pr
-     JOIN Roles r ON pr.role_id = r.role_id
-     WHERE pr.personnel_id = :pid'
-);
-$roleStmt->execute(['pid' => $personnel['personnel_id']]);
-$currentRoles = $roleStmt->fetchAll();
-$authorized = false;
+$shelterId      = isset($body['shelter_id']) ? (is_numeric($body['shelter_id']) ? (int)$body['shelter_id'] : null) : null;
+$personnelName  = sanitize($body['personnel_name']);
+$role           = sanitize($body['role']);
+$phone          = sanitize($body['phone'] ?? null);
+$username       = sanitize($body['username']);
+$password       = $body['password'] ?? '';
+
+$currentRoles = getCurrentRoles();
 $currentShelterId = null;
 foreach ($currentRoles as $r) {
-    if (in_array($r['role_name'], $allowedRoles, true)) {
-        $authorized = true;
-        if ($r['role_name'] === 'shelter_manager' && !empty($r['shelter_id'])) {
-            $currentShelterId = $r['shelter_id'];
-        }
+    if (!empty($r['role_name']) && $r['role_name'] === 'shelter_manager' && !empty($r['shelter_id'])) {
+        $currentShelterId = $r['shelter_id'];
+        break;
     }
 }
-if (!$authorized) {
-    http_response_code(403);
-    echo json_encode(['error' => 'Access denied. Only managers and above can add personnel.']);
-    exit;
-}
 
-if ($personnelName === '' || $username === '' || $password === '' || $role === '') {
-    http_response_code(400);
-    echo json_encode(['error' => 'personnel_name, username, password, and role are required.']);
-    exit;
-}
-
-if (!in_array($role, ['superadmin', 'shelter_manager', 'staff', 'volunteer', 'auditor'], true)) {
-    http_response_code(400);
-    echo json_encode(['error' => 'Invalid role selected.']);
-    exit;
+$validRoles = ['superadmin', 'shelter_manager', 'staff', 'volunteer', 'auditor'];
+if (!in_array($role, $validRoles, true)) {
+    respondError('Invalid role selected', 400);
 }
 
 if (in_array($role, ['staff', 'volunteer', 'shelter_manager'], true) && !$shelterId) {
-    http_response_code(400);
-    echo json_encode(['error' => 'Shelter is required for the selected role.']);
-    exit;
+    respondError('Shelter is required for the selected role', 400);
 }
-if (in_array($role, ['superadmin'], true) && $currentShelterId !== null && !hasRole('superadmin')) {
-    http_response_code(403);
-    echo json_encode(['error' => 'Only superadmin can create another superadmin.']);
-    exit;
+
+if ($role === 'superadmin' && $currentShelterId !== null && !hasRole('superadmin')) {
+    respondError('Only superadmin can create another superadmin', 403);
 }
+
 if (!empty($currentShelterId) && $shelterId && (int)$shelterId !== (int)$currentShelterId) {
-    http_response_code(403);
-    echo json_encode(['error' => 'Shelter managers may only create users for their own shelter.']);
-    exit;
+    respondError('Shelter managers may only create users for their own shelter', 403);
 }
 
 if (strlen($password) < 8) {
-    http_response_code(400);
-    echo json_encode(['error' => 'Password must be at least 8 characters.']);
-    exit;
+    respondError('Password must be at least 8 characters', 400);
 }
 
 try {
-    
-    $check = $pdo->prepare('SELECT personnel_id FROM Personnel WHERE username = :username LIMIT 1');
-    $check->execute(['username' => $username]);
-    if ($check->fetch()) {
-        http_response_code(409);
-        echo json_encode(['error' => 'Username already taken.']);
-        exit;
-    }
+    $exists = fetchOne('SELECT personnel_id FROM Personnel WHERE username = :username LIMIT 1', ['username' => $username]);
+    if ($exists) respondError('Username already taken', 409);
 
-    $hash = password_hash($password, PASSWORD_DEFAULT);
-
-    $stmt = $pdo->prepare(
-        'INSERT INTO Personnel (personnel_name, username, password_hash, phone)
-         VALUES (:personnel_name, :username, :password_hash, :phone)'
-    );
-    $stmt->execute([
+    $params = [
         'personnel_name' => $personnelName,
-        'username'       => $username,
-        'password_hash'  => $hash,
-        'phone'          => $phone ?: null,
-    ]);
+        'username' => $username,
+        'password_hash' => password_hash($password, PASSWORD_DEFAULT),
+        'phone' => $phone ?: null
+    ];
+    $result = execute('INSERT INTO Personnel (personnel_name, username, password_hash, phone) VALUES (:personnel_name, :username, :password_hash, :phone)', $params);
+    $newId = $result['last_insert_id'];
 
-    $newId = $pdo->lastInsertId();
-
-    
     if (!empty($role)) {
-        try {
-            $rstmt = $pdo->prepare('SELECT role_id FROM Roles WHERE role_name = :r LIMIT 1');
-            $rstmt->execute(['r' => $role]);
-            $r = $rstmt->fetch();
-            if ($r) {
-                $insertPR = $pdo->prepare('INSERT INTO PersonnelRoles (personnel_id, role_id, shelter_id) VALUES (:pid, :rid, :sid)');
-                $insertPR->execute(['pid' => $newId, 'rid' => $r['role_id'], 'sid' => $shelterId ?: null]);
-            }
-        } catch (Exception $e) {
-            
+        $rrow = fetchOne('SELECT role_id FROM Roles WHERE role_name = :r LIMIT 1', ['r' => $role]);
+        if ($rrow) {
+            execute('INSERT INTO PersonnelRoles (personnel_id, role_id, shelter_id) VALUES (:pid, :rid, :sid)', ['pid' => $newId, 'rid' => $rrow['role_id'], 'sid' => $shelterId ?: null]);
         }
     }
 
-    echo json_encode([
-        'success'       => true,
-        'personnel_id'  => $newId,
-    ]);
+    respondSuccess(['success' => true, 'personnel_id' => $newId], 201);
 
-} catch (PDOException $e) {
-    http_response_code(500);
-    echo json_encode(['error' => 'Server error. Please try again.']);
-    
+} catch (Exception $e) {
+    respondError('Failed to create personnel: ' . $e->getMessage(), 500);
 }

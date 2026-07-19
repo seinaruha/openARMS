@@ -45,6 +45,11 @@ if ($method === 'GET') {
                  FROM Personnel
                  ORDER BY personnel_id DESC'
             );
+            foreach ($personnel as &$p) {
+                $roles = fetchAll('SELECT r.role_name, pr.shelter_id FROM PersonnelRoles pr JOIN Roles r ON r.role_id = pr.role_id WHERE pr.personnel_id = :id', ['id' => $p['personnel_id']]);
+                $p['roles'] = $roles;
+            }
+            unset($p);
         } else {
             $shelterIds = getCurrentShelterIds();
             if (empty($shelterIds)) {
@@ -59,6 +64,11 @@ if ($method === 'GET') {
                  ORDER BY p.personnel_id DESC",
                 $shelterIds
             );
+            foreach ($personnel as &$p) {
+                $roles = fetchAll('SELECT r.role_name, pr.shelter_id FROM PersonnelRoles pr JOIN Roles r ON r.role_id = pr.role_id WHERE pr.personnel_id = :id', ['id' => $p['personnel_id']]);
+                $p['roles'] = $roles;
+            }
+            unset($p);
         }
         respondSuccess(['personnel' => $personnel]);
     }

@@ -7,11 +7,11 @@ async function loadSuppliers() {
   allSuppliers = (await api('/suppliers.php'))?.suppliers || [];
   document.getElementById('sup-tbody').innerHTML = allSuppliers.length ? allSuppliers.map(s => `
     <tr>
-      <td><strong>${s.supplier_name}</strong></td>
-      <td style="font-size:13px">${s.contact || '—'}</td>
-      <td style="font-size:13px;color:var(--text-accent)">${s.email || '—'}</td>
-      <td style="font-size:12.5px;color:var(--gray-600)">${s.address || '—'}</td>
-      <td style="font-size:12.5px;color:var(--gray-600)">${fmt(s.created_at)}</td>
+      <td><strong class="strong-regular">${s.supplier_name}</strong></td>
+      <td class="cell-regular">${s.contact || '—'}</td>
+      <td class="cell-regular text-accent">${s.email || '—'}</td>
+      <td class="cell-small">${s.address || '—'}</td>
+      <td class="cell-small">${fmt(s.created_at)}</td>
     </tr>
   `).join('') : '<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">🏭</div><p>No suppliers yet</p></div></td></tr>';
 }
@@ -34,13 +34,5 @@ async function saveSupplier() {
   toast('Supplier added');
   loadSuppliers();
 }
-
-function closeModal(id) {
-  document.getElementById(id).classList.remove('open');
-}
-
-document.querySelectorAll('.modal-overlay').forEach(m => {
-  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
-});
 
 loadSuppliers();

@@ -10,13 +10,13 @@ async function loadReport() {
   const rows = (await api('/report.php' + (shel ? '?shelter_id='+shel : '')))?.reports || [];
   document.getElementById('rpt-tbody').innerHTML = rows.length ? rows.map(r => `
     <tr>
-      <td><strong>${r.name}</strong></td>
+      <td><strong class="strong-regular">${r.name}</strong></td>
       <td><span class="badge badge-${r.category.toLowerCase()}">${r.category}</span></td>
-      <td style="font-size:13px;color:var(--gray-600)">${r.shelter_name || '—'}</td>
+      <td class="cell-muted">${r.shelter_name || '—'}</td>
       <td><strong>${fmtNumber(r.quantity)}</strong></td>
-      <td style="font-size:12.5px">${r.unit}</td>
-      <td style="font-size:12.5px;color:var(--gray-600)">${fmtNumber(r.min_stock)}</td>
-      <td style="font-size:12.5px">${r.expiry_date ? fmt(r.expiry_date) : '—'}</td>
+      <td class="cell-small">${r.unit}</td>
+      <td class="cell-small">${fmtNumber(r.min_stock)}</td>
+      <td class="cell-small">${r.expiry_date ? fmt(r.expiry_date) : '—'}</td>
       <td>${r.stock_status === 'Low' ? '<span class="badge badge-low">Low</span>' : '<span class="badge badge-ok">OK</span>'}</td>
       <td>${r.expiry_status === 'Expired' ? '<span class="badge badge-expired">Expired</span>' : r.expiry_status === 'Expiring Soon' ? '<span class="badge badge-expiring">Soon</span>' : '<span class="badge badge-ok">Good</span>'}</td>
     </tr>

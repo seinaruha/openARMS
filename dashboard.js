@@ -5,6 +5,7 @@ initSidebar();
 const CATEGORY_COLORS = { food: '#1a6b4a', medicine: '#5b5fc7', supplies: '#e67e22' };
 const FALLBACK_COLORS = ['#2d9166', '#d68910', '#c0392b', '#1a6b4a', '#e67e22', '#5b5fc7'];
 let currentAlertShelter = null;
+const categoryItemCache = {};
 
 function getStoredUser() {
   const userJson = localStorage.getItem('asrms_user') || sessionStorage.getItem('asrms_user');
@@ -33,6 +34,7 @@ async function loadShelterSelector() {
 
   select.addEventListener('change', () => {
     currentAlertShelter = select.value || null;
+    Object.keys(categoryItemCache).forEach(key => delete categoryItemCache[key]);
     loadDashboard();
   });
 }
@@ -43,29 +45,42 @@ function renderCategoryDonut(categories) {
     el.innerHTML = '<div class="empty-state"><div class="empty-icon">📦</div><p>No inventory data yet</p></div>';
     return;
   }
-  const total = categories.reduce((s, c) => s + c.total_qty, 0) || 1;
+  const total = categories.reduce((s, c) => s + (c.excess_qty || 0), 0) || 1;
   const colorFor = (c, i) => CATEGORY_COLORS[c.category.toLowerCase()] || FALLBACK_COLORS[i % FALLBACK_COLORS.length];
 
   let cumulative = 0;
   const stops = categories.map((c, i) => {
-    const pct = (c.total_qty / total) * 100;
+    const pct = ((c.excess_qty || 0) / total) * 100;
     const start = cumulative;
     cumulative += pct;
     return `${colorFor(c, i)} ${start}% ${cumulative}%`;
   }).join(', ');
 
-  const legend = categories.map((c, i) => `
-    <div class="donut-legend-item">
-      <div class="li-left">
-        <span class="legend-dot" style="background:${colorFor(c, i)}"></span>
-        <div>
-          <div class="li-name">${c.category}</div>
-          <div class="li-sub">${c.count} types · ${fmtNumber(c.total_qty)} units</div>
+  const legend = categories.map((c, i) => {
+    const current = c.total_qty || 0;
+    const minimum = c.min_qty || 0;
+    const isDanger = minimum > 0 && current < minimum;
+    const isWarning = minimum > 0 && current === minimum;
+    const statusClass = isDanger ? 'danger' : (isWarning ? 'warning' : '');
+    return `
+    <div class="donut-legend-item ${statusClass}" data-category-index="${i}" data-category="${c.category}">
+      <div class="legend-header">
+        <div class="li-left">
+          <span class="legend-dot" style="background:${colorFor(c, i)}"></span>
+          <div>
+            <div class="li-name">${c.category}</div>
+            <div class="li-sub">${c.count} types · ${fmtNumber(c.total_qty)} units · min ${fmtNumber(minimum)}</div>
+          </div>
+        </div>
+        <div class="li-right">
+          <div class="li-status">${fmtNumber(current)} / ${fmtNumber(minimum)}</div>
+          <span class="legend-chevron">›</span>
         </div>
       </div>
-      <div class="li-pct">${Math.round((c.total_qty / total) * 100)}%</div>
+      <div class="category-details" id="category-details-${i}"></div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   el.innerHTML = `
     <div class="donut-wrap">
@@ -75,12 +90,87 @@ function renderCategoryDonut(categories) {
       <div class="donut-legend">${legend}</div>
     </div>
   `;
+
+  attachCategoryToggles();
+}
+
+function escapeHtml(text) {
+  return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function attachCategoryToggles() {
+  document.querySelectorAll('.donut-legend-item').forEach(item => {
+    item.addEventListener('click', async () => {
+      const detailsEl = item.querySelector('.category-details');
+      if (!detailsEl) return;
+      const category = item.dataset.category;
+      if (detailsEl.classList.contains('expanded')) {
+        detailsEl.classList.remove('expanded');
+        item.classList.remove('expanded');
+        return;
+      }
+      await loadCategoryDetails(category, detailsEl, item);
+    });
+  });
+}
+
+async function loadCategoryDetails(category, detailsEl, itemEl) {
+  if (detailsEl.dataset.loaded === '1') {
+    detailsEl.classList.add('expanded');
+    itemEl.classList.add('expanded');
+    return;
+  }
+
+  detailsEl.innerHTML = '<div class="category-details-loading">Loading items...</div>';
+  const shelterQuery = currentAlertShelter ? `?shelter_id=${encodeURIComponent(currentAlertShelter)}` : '';
+  try {
+    const response = categoryItemCache[category] || await api('/inventory.php' + shelterQuery);
+    if (!categoryItemCache[category]) {
+      categoryItemCache[category] = response;
+    }
+    const items = (response?.items || []).filter(i => String(i.category) === category);
+    if (!items.length) {
+      detailsEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📦</div><p>No items in this category</p></div>';
+      detailsEl.dataset.loaded = '1';
+      detailsEl.classList.add('expanded');
+      itemEl.classList.add('expanded');
+      return;
+    }
+
+    detailsEl.innerHTML = `
+      <div class="category-items">
+        ${items.map(item => {
+          const current = Number(item.quantity || 0);
+          const minStock = Number(item.min_stock || 0);
+          const statusClass = minStock > 0 && current < minStock ? 'danger' : (minStock > 0 && current === minStock ? 'warning' : '');
+          return `
+            <div class="category-item-row ${statusClass}">
+              <div>
+                <div class="category-item-name">${escapeHtml(item.name)}</div>
+                <div class="category-item-meta">${escapeHtml(item.unit)} · ${escapeHtml(item.shelter_name || '')}</div>
+              </div>
+              <div class="category-item-stats">${fmtNumber(current)} / ${fmtNumber(minStock)}</div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+    detailsEl.dataset.loaded = '1';
+    detailsEl.classList.add('expanded');
+    itemEl.classList.add('expanded');
+  } catch (err) {
+    detailsEl.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><p>Unable to load items</p></div>';
+    console.warn(err);
+  }
 }
 
 async function loadDashboard() {
+  const statsPath = '/stats.php' + (currentAlertShelter ? `?shelter_id=${encodeURIComponent(currentAlertShelter)}` : '');
+  const alertsPath = '/alerts.php' + (currentAlertShelter ? `?shelter_id=${encodeURIComponent(currentAlertShelter)}` : '');
+
   const [stats, alerts] = await Promise.all([
-    api('/stats.php'),
-    api('/alerts.php' + (currentAlertShelter ? `?shelter_id=${encodeURIComponent(currentAlertShelter)}` : ''))
+    api(statsPath),
+    api(alertsPath)
   ]);
   document.getElementById('s-items').textContent = fmtNumber(stats.total_items);
   document.getElementById('s-qty').textContent = fmtNumber(stats.total_quantity);
