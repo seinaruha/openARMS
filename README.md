@@ -12,8 +12,8 @@ go to localhost/filename.php in a browser
 
 
 to-do:  
-fix user registration
-fix issues with donation page  
+fix user registration (done)
+fix issues with donation page (done)  
 clean up report generation  
 
 
