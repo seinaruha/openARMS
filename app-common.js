@@ -47,7 +47,7 @@ if (typeof document !== 'undefined') {
   });
 }
 
-// Modal helpers: centralize modal behavior so page scripts don't duplicate this logic.
+
 function closeModal(id) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -57,13 +57,11 @@ function closeModal(id) {
 function initModalOverlays() {
   try {
     document.querySelectorAll('.modal-overlay').forEach(m => {
-      // ensure we don't attach duplicates
       if (m.__modal_inited) return;
       m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
       m.__modal_inited = true;
     });
   } catch (e) {
-    // ignore if DOM not ready or selectors not available
   }
 }
 
@@ -151,7 +149,6 @@ function initSidebar() {
         const lb = document.getElementById('sidebar-logout');
         if (lb) lb.addEventListener('click', () => { localStorage.removeItem('asrms_user'); localStorage.removeItem('asrms_token'); sessionStorage.removeItem('asrms_user'); sessionStorage.removeItem('asrms_token'); window.location.href = 'login.html'; });
 
-        // no role-based hiding in the sidebar; access is enforced server-side
       }
     });
 }
