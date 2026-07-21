@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Donations</title>
+  <link rel="stylesheet" href="common.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app">
+  <div id="sidebar-container"></div>
+  <main class="main">
+    <div class="topbar">
+      <div class="topbar-title">Donations</div>
+      <div class="topbar-right"></div>
+    </div>
+
+    <div class="content">
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" placeholder="Search donors" id="don-search" oninput="filterDonations()">
+          </div>
+          <select class="filter-select" id="don-shelter-filter" onchange="filterDonations()">
+            <option value="">All Shelters</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" onclick="openAddDonation()">+ Record Donation</button>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Donor</th><th>Item</th><th>Qty</th><th>Shelter</th><th>Supplier</th><th>Received</th><th>Notes</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="don-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-overlay" id="modal-donation">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modal-title-text">Record Donation</h2>
+      <button class="modal-close" onclick="closeModal('modal-donation')">×</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group full"><label>Donor Name</label><input type="text" id="don-name" placeholder="Donor name"></div>
+      <div class="form-group"><label>Shelter *</label>
+        <select id="don-shelter"><option value="">Choose shelter</option></select>
+      </div>
+      <div class="form-group"><label>Supplier (optional)</label>
+        <select id="don-supplier"><option value="">Walk-in / Anonymous</option></select>
+      </div>
+      <div class="form-group full"><label>Donated Item *</label>
+          <div class="form-actions">
+            <select id="don-item" class="flex-1"><option value="">Choose item</option></select>
+            <button type="button" class="btn btn-secondary" onclick="openQuickCreateItem()">Quick create item</button>
+          </div>
+      </div>
+      <div class="form-group"><label>Quantity *</label><input type="number" id="don-qty" min="0" step="0.001" placeholder="0"></div>
+      <div class="form-group"><label>Received Date *</label><input type="date" id="don-date"></div>
+      <div class="form-group full"><label>Description</label><input type="text" id="don-desc" placeholder="Optional description"></div>
+      <div class="form-group full"><label>Receipt Notes</label><textarea id="don-notes" placeholder="Optional notes"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-donation')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveDonation()" id="save-btn">Save donation</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-quick-item">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title">Quick Create Item</h2>
+      <button class="modal-close" onclick="closeModal('modal-quick-item')">×</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group full"><label>Item Name *</label><input type="text" id="quick-item-name" placeholder="Dog Food"></div>
+      <div class="form-group"><label>Unit *</label><input type="text" id="quick-item-unit" placeholder="kg, pcs, bottle"></div>
+      <div class="form-group"><label>Category *</label>
+        <select id="quick-item-category">
+          <option value="Food">Food</option>
+          <option value="Medicine">Medicine</option>
+          <option value="Supplies">Supplies</option>
+        </select>
+      </div>
+      <div class="form-group full"><label>Shelter *</label>
+        <select id="quick-item-shelter"><option value="">Choose shelter</option></select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-quick-item')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveQuickItem()">Create Item</button>
+    </div>
+  </div>
+</div>
+
+<script src="app-common.js"></script>
+<script src="donation.js"></script>
+</body>
+</html>
