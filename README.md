@@ -15,7 +15,14 @@ to-do:
 fix user registration (done)
 fix issues with donation page (done)  
 clean up report generation  
-
+enforce user based view control  
+ *staff only view stock log, inventory, and donations of respective shelter 
+ *also remove edit buttons from staff  
+ *manager have full control of assigned shelter  
+ *this includes editing and removing items  
+ *admin have full control of system  
+ *auditor have read access to all shelter  
+clean up bpmn  
 
 
 
