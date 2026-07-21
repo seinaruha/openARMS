@@ -1,290 +1,231 @@
 <?php
-require_once __DIR__ . "/db_config.php";
 
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
+require_once __DIR__ . '/api-helper.php';
 
-$conn = new mysqli($dbHost, $dbUser, $dbPass, $dbName);
-if ($conn->connect_error) {
-    die("DB connection failed: " . $conn->connect_error);
-}
+$method = getMethod();
+$id = getQuery('id');
+$body = getJsonBody();
 
-$conn->set_charset("utf8mb4");
+requireAuth();
 
-function h($s) { return htmlspecialchars($s ?? "", ENT_QUOTES, "UTF-8"); }
-
-$shelters = $conn->query("SELECT shelter_id, shelter_name FROM Shelters ORDER BY shelter_id DESC");
-
-if ($_SERVER["REQUEST_METHOD"] === "POST") {
-    $action = $_POST["action"] ?? "";
-
-    $item_id = (int)($_POST["item_id"] ?? 0);
-
-    $shelter_id = (int)($_POST["shelter_id"] ?? 0);
-    $item_name = trim($_POST["item_name"] ?? "");
-    $item_type = trim($_POST["item_type"] ?? "");
-    $unit = trim($_POST["unit"] ?? "");
-    $active = isset($_POST["active"]) ? 1 : 0;
-
-    $received_date = trim($_POST["received_date"] ?? "");
-    $expiry_date = trim($_POST["expiry_date"] ?? "");
-    $expiry_date_param = ($expiry_date === "") ? null : $expiry_date;
-
-    $notes = trim($_POST["notes"] ?? "");
-    $notes_param = ($notes === "") ? null : $notes;
-
-    $initial_qty = trim($_POST["initial_qty"] ?? "");
-    if ($initial_qty === "") $initial_qty = "0";
-
-    $on_hand_qty = trim($_POST["on_hand_qty"] ?? "");
-    if ($on_hand_qty === "") $on_hand_qty = $initial_qty;
-
-    if ($action === "add") {
-        $stmt = $conn->prepare("
-        INSERT INTO Items
-        (shelter_id, item_name, item_type, unit, active, received_date, expiry_date, notes, initial_qty, on_hand_qty)
-        VALUES
-        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ");
-        if (!$stmt) { die("Prepare failed (add): " . $conn->error); }
-        $stmt->bind_param(
-            "isssisssdd",
-            $shelter_id,
-            $item_name,
-            $item_type,
-            $unit,
-            $active,
-            $received_date,
-            $expiry_date_param,
-            $notes_param,
-            $initial_qty,
-            $on_hand_qty
+if ($method === 'GET') {
+    if ($id) {
+        $item = fetchOne(
+            'SELECT i.item_id,
+                    i.shelter_id,
+                    i.item_name AS name,
+                    i.item_type AS category,
+                    i.unit,
+                    i.active,
+                    i.received_date,
+                    i.expiry_date,
+                    i.notes,
+                    i.item_properties,
+                    i.on_hand_qty AS quantity,
+                    i.initial_qty,
+                    COALESCE(si.low_stock_threshold, i.initial_qty, 0) AS min_stock,
+                    i.is_active,
+                    i.created_at,
+                    i.updated_at,
+                    s.shelter_name
+             FROM Items i
+             LEFT JOIN Shelters s ON i.shelter_id = s.shelter_id
+             LEFT JOIN ShelterInventory si ON si.item_id = i.item_id AND si.shelter_id = i.shelter_id
+             WHERE i.item_id = :id AND i.is_active = 1',
+            ['id' => $id]
         );
-        if (!$stmt->execute()) { die("Execute failed (add): " . $stmt->error); }
-        $stmt->close();
 
-    } elseif ($action === "update") {
-        $stmt = $conn->prepare("
-        UPDATE Items
-        SET shelter_id = ?,
-        item_name = ?,
-        item_type = ?,
-        unit = ?,
-        active = ?,
-        received_date = ?,
-        expiry_date = ?,
-        notes = ?,
-        initial_qty = ?,
-        on_hand_qty = ?
-        WHERE item_id = ?
-        ");
-        if (!$stmt) { die("Prepare failed (update): " . $conn->error); }
-        $stmt->bind_param(
-            "isssisssdd",
-            $shelter_id,
-            $item_name,
-            $item_type,
-            $unit,
-            $active,
-            $received_date,
-            $expiry_date_param,
-            $notes_param,
-            $initial_qty,
-            $on_hand_qty,
-            $item_id
+        if (!$item) {
+            respondError('Item not found', 404);
+        }
+        if (!isSuperadmin() && !canAccessShelter($item['shelter_id'])) {
+            respondError('Access denied', 403);
+        }
+
+        respondSuccess(['item' => $item]);
+    } else {
+        $shelter_id = getQuery('shelter_id');
+        $params = [];
+        $filter = 'WHERE i.is_active = 1';
+        $allowedShelters = getCurrentShelterIds();
+        if ($shelter_id) {
+            if (!isSuperadmin() && !canAccessShelter($shelter_id)) {
+                respondError('Access denied', 403);
+            }
+            $filter .= ' AND i.shelter_id = :shelter_id';
+            $params['shelter_id'] = $shelter_id;
+        } elseif (!isSuperadmin()) {
+            if (is_array($allowedShelters) && !empty($allowedShelters)) {
+                $placeholders = implode(',', array_fill(0, count($allowedShelters), '?'));
+                $filter .= " AND i.shelter_id IN ($placeholders)";
+                $params = array_merge($params, $allowedShelters);
+            } else {
+                $filter .= ' AND 0 = 1';
+            }
+        }
+
+        $items = fetchAll(
+            'SELECT i.item_id,
+                    i.shelter_id,
+                    i.item_name AS name,
+                    i.item_type AS category,
+                    i.unit,
+                    i.active,
+                    i.received_date,
+                    i.expiry_date,
+                    i.notes,
+                    i.item_properties,
+                    i.on_hand_qty AS quantity,
+                    i.initial_qty,
+                    COALESCE(si.low_stock_threshold, i.initial_qty, 0) AS min_stock,
+                    i.is_active,
+                    i.created_at,
+                    i.updated_at,
+                    s.shelter_name
+             FROM Items i
+             LEFT JOIN Shelters s ON i.shelter_id = s.shelter_id
+             LEFT JOIN ShelterInventory si ON si.item_id = i.item_id AND si.shelter_id = i.shelter_id
+             ' . $filter . '
+             ORDER BY i.item_id DESC',
+            $params
         );
-        if (!$stmt->execute()) { die("Execute failed (update): " . $stmt->error); }
-        $stmt->close();
-
-    } elseif ($action === "delete") {
-        $stmt = $conn->prepare("DELETE FROM Items WHERE item_id = ?");
-        $stmt->bind_param("i", $item_id);
-        $stmt->execute();
-        $stmt->close();
+        respondSuccess(['items' => $items]);
     }
 
-    //header("Location: " . strtok($_SERVER["REQUEST_URI"], "?"));
-    //exit;
-}
+} elseif ($method === 'POST') {
+    ensureRoles(['superadmin','shelter_manager','staff']);
+    $itemNameInput = $body['item_name'] ?? $body['name'] ?? null;
+    validateRequired(array_merge($body, ['item_name' => $itemNameInput]), ['item_name', 'unit', 'shelter_id']);
+    $item_name = sanitize($itemNameInput);
+    $unit = sanitize($body['unit'] ?? null);
+    if (!$item_name || !$unit) {
+        respondError('Field name and unit are required', 400);
+    }
 
-$editItem = null;
-if (isset($_GET["edit"])) {
-    $editId = (int)$_GET["edit"];
-    $stmt = $conn->prepare("
-    SELECT
-    item_id, shelter_id,
-    item_name, item_type, unit, active,
-    received_date, expiry_date, notes,
-    initial_qty, on_hand_qty,
-    created_at, updated_at
-    FROM Items
-    WHERE item_id = ?
-    ");
-    $stmt->bind_param("i", $editId);
-    $stmt->execute();
-    $editItem = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-}
+    $shelter_id = !empty($body['shelter_id']) ? (int)$body['shelter_id'] : null;
+    if (!isSuperadmin() && !canAccessShelter($shelter_id)) {
+        respondError('Access denied', 403);
+    }
+    $item_type = sanitize($body['item_type'] ?? $body['category'] ?? null);
+    $item_properties = isset($body['item_properties']) ? sanitize($body['item_properties']) : null;
+    $on_hand_qty = isset($body['on_hand_qty']) ? (float)$body['on_hand_qty'] : (isset($body['quantity']) ? (float)$body['quantity'] : 0);
+    $min_stock = isset($body['min_stock']) ? (float)$body['min_stock'] : null;
+    $initial_qty = isset($body['initial_qty']) ? (float)$body['initial_qty'] : ($min_stock !== null ? $min_stock : $on_hand_qty);
+    $received_date = sanitize($body['received_date'] ?? date('Y-m-d'));
+    $expiry_date = sanitize($body['expiry_date'] ?? null);
+    $notes = sanitize($body['notes'] ?? null);
 
-$result = $conn->query("
-SELECT
-i.item_id, i.shelter_id,
-i.item_name, i.item_type, i.unit, i.active,
-i.received_date, i.expiry_date, i.notes,
-i.initial_qty, i.on_hand_qty,
-i.created_at, i.updated_at
-FROM Items i
-ORDER BY i.item_id DESC
-");
+    try {
+        $result = execute(
+            'INSERT INTO Items (shelter_id, item_name, item_type, unit, item_properties, on_hand_qty, initial_qty, received_date, expiry_date, notes)
+             VALUES (:shelter_id, :item_name, :item_type, :unit, :item_properties, :on_hand_qty, :initial_qty, :received_date, :expiry_date, :notes)',
+            [
+                'shelter_id' => $shelter_id,
+                'item_name' => $item_name,
+                'item_type' => $item_type,
+                'unit' => $unit,
+                'item_properties' => $item_properties,
+                'on_hand_qty' => $on_hand_qty,
+                'initial_qty' => $initial_qty,
+                'received_date' => $received_date,
+                'expiry_date' => $expiry_date,
+                'notes' => $notes
+            ]
+        );
+
+        $newItemId = $result['last_insert_id'];
+        if ($min_stock !== null && $shelter_id) {
+            execute(
+                'INSERT INTO ShelterInventory (shelter_id, item_id, low_stock_threshold)
+                 VALUES (:shelter_id, :item_id, :low_stock_threshold)',
+                ['shelter_id' => $shelter_id, 'item_id' => $newItemId, 'low_stock_threshold' => $min_stock]
+            );
+        }
+
+        respondSuccess(['success' => true, 'item_id' => $newItemId], 201);
+
+    } catch (Exception $e) {
+        respondError('Failed to create item: ' . $e->getMessage(), 500);
+    }
+
+} elseif ($method === 'PUT') {
+    ensureRoles(['superadmin','shelter_manager','staff']);
+    requireParam($id, 'Item ID');
+    $body = requireJsonBody();
+
+    $existingItem = fetchOne('SELECT shelter_id FROM Items WHERE item_id = :id LIMIT 1', ['id' => $id]);
+    if (!$existingItem) {
+        respondError('Item not found', 404);
+    }
+    if (!isSuperadmin() && !canAccessShelter($existingItem['shelter_id'])) {
+        respondError('Access denied', 403);
+    }
+
+    $shelter_id = isset($body['shelter_id']) ? (int)$body['shelter_id'] : $existingItem['shelter_id'];
+    if (!isSuperadmin() && !canAccessShelter($shelter_id)) {
+        respondError('Access denied', 403);
+    }
+    $item_name = sanitize($body['item_name'] ?? $body['name'] ?? null);
+    $item_type = sanitize($body['item_type'] ?? $body['category'] ?? null);
+    $unit = sanitize($body['unit'] ?? null);
+    $item_properties = isset($body['item_properties']) ? sanitize($body['item_properties']) : null;
+    $on_hand_qty = isset($body['on_hand_qty']) ? (float)$body['on_hand_qty'] : (isset($body['quantity']) ? (float)$body['quantity'] : null);
+    $min_stock = isset($body['min_stock']) ? (float)$body['min_stock'] : null;
+    $initial_qty = isset($body['initial_qty']) ? (float)$body['initial_qty'] : ($min_stock !== null ? $min_stock : null);
+    $received_date = sanitize($body['received_date'] ?? null);
+    $expiry_date = sanitize($body['expiry_date'] ?? null);
+    $notes = sanitize($body['notes'] ?? null);
+    $is_active = isset($body['is_active']) ? (int)$body['is_active'] : null;
+
+    updateTable('Items', 'item_id', $id, [
+        'shelter_id' => $shelter_id,
+        'item_name' => $item_name,
+        'item_type' => $item_type,
+        'unit' => $unit,
+        'item_properties' => $item_properties,
+        'on_hand_qty' => $on_hand_qty,
+        'initial_qty' => $initial_qty,
+        'received_date' => $received_date,
+        'expiry_date' => $expiry_date,
+        'notes' => $notes,
+        'is_active' => $is_active
+    ]);
+
+    if ($min_stock !== null && $shelter_id) {
+        $existingInventory = fetchOne(
+            'SELECT shelter_inventory_id FROM ShelterInventory WHERE item_id = :item_id AND shelter_id = :shelter_id LIMIT 1',
+            ['item_id' => $id, 'shelter_id' => $shelter_id]
+        );
+        if ($existingInventory) {
+            execute(
+                'UPDATE ShelterInventory SET low_stock_threshold = :low_stock_threshold WHERE shelter_inventory_id = :id',
+                ['low_stock_threshold' => $min_stock, 'id' => $existingInventory['shelter_inventory_id']]
+            );
+        } else {
+            execute(
+                'INSERT INTO ShelterInventory (shelter_id, item_id, low_stock_threshold)
+                 VALUES (:shelter_id, :item_id, :low_stock_threshold)',
+                ['shelter_id' => $shelter_id, 'item_id' => $id, 'low_stock_threshold' => $min_stock]
+            );
+        }
+    }
+
+    respondSuccess(['success' => true]);
+
+} elseif ($method === 'DELETE') {
+    ensureRoles(['superadmin','shelter_manager']);
+    requireParam($id, 'Item ID');
+    $existingItem = fetchOne('SELECT shelter_id FROM Items WHERE item_id = :id LIMIT 1', ['id' => $id]);
+    if (!$existingItem) {
+        respondError('Item not found', 404);
+    }
+    if (!isSuperadmin() && !canAccessShelter($existingItem['shelter_id'])) {
+        respondError('Access denied', 403);
+    }
+    softDelete('Items', 'item_id', $id);
+    respondSuccess(['success' => true]);
+
+} else {
+    respondError('Method not allowed', 405);
+}
 ?>
-<!doctype html>
-<html>
-<head>
-<meta charset="utf-8" />
-<title>Items</title>
-<style>
-body { font-family: Arial, sans-serif; margin: 20px; }
-table { border-collapse: collapse; width: 100%; margin-top: 16px; }
-th, td { border: 1px solid #ddd; padding: 8px; }
-th { background: #f4f4f4; }
-form { margin: 0; }
-.row { margin-bottom: 10px; }
-input[type="text"], input[type="number"], input[type="date"], select { padding: 6px; width: 100%; max-width: 420px; }
-.actions button { padding: 6px 10px; margin-right: 6px; }
-.card { border: 1px solid #ddd; padding: 14px; border-radius: 6px; max-width: 980px; }
-.small-muted { color: #666; font-size: 12px; margin-top: 6px; }
-</style>
-</head>
-<body>
-<h2>Items</h2>
-
-<div class="card">
-<h3><?= $editItem ? "Edit Item Instance" : "Add Item Instance" ?></h3>
-
-<form method="post" action="inventory.php">
-<input type="hidden" name="action" value="<?= $editItem ? "update" : "add" ?>">
-<?php if ($editItem): ?>
-<input type="hidden" name="item_id" value="<?= (int)$editItem["item_id"] ?>">
-<?php endif; ?>
-
-<div class="row">
-<label>Shelter</label><br>
-<select name="shelter_id" required>
-<option value="">-- Select Shelter --</option>
-<?php while ($srow = $shelters->fetch_assoc()): ?>
-<?php $sid = (int)$srow["shelter_id"]; ?>
-<option value="<?= $sid ?>" <?= ((int)($editItem["shelter_id"] ?? 0) === $sid) ? "selected" : "" ?>>
-<?= h($srow["shelter_name"]) ?> (<?= $sid ?>)
-</option>
-<?php endwhile; ?>
-</select>
-</div>
-
-<div class="row">
-<label>Item Name</label><br>
-<input type="text" name="item_name" required value="<?= h($editItem["item_name"] ?? "") ?>">
-</div>
-
-<div class="row">
-<label>Item Type</label><br>
-<input type="text" name="item_type" required value="<?= h($editItem["item_type"] ?? "") ?>">
-</div>
-
-<div class="row">
-<label>Unit</label><br>
-<input type="text" name="unit" required value="<?= h($editItem["unit"] ?? "") ?>">
-</div>
-
-<div class="row">
-<label>
-<input type="checkbox" name="active" value="1" <?= (int)($editItem["active"] ?? 1) === 1 ? "checked" : "" ?>>
-Active
-</label>
-</div>
-
-<div class="row">
-<label>Received Date</label><br>
-<input type="date" name="received_date" required value="<?= h($editItem["received_date"] ?? "") ?>">
-</div>
-
-<div class="row">
-<label>Expiry Date (optional)</label><br>
-<input type="date" name="expiry_date" value="<?= h($editItem["expiry_date"] ?? "") ?>">
-</div>
-
-<div class="row">
-<label>Notes (optional)</label><br>
-<input type="text" name="notes" value="<?= h($editItem["notes"] ?? "") ?>">
-</div>
-
-<div class="row">
-<label>Initial Quantity</label><br>
-<input type="number" step="0.001" name="initial_qty" required value="<?= h($editItem["initial_qty"] ?? "0") ?>">
-</div>
-
-<div class="row">
-<label>On-hand Quantity</label><br>
-<input type="number" step="0.001" name="on_hand_qty" required value="<?= h($editItem["on_hand_qty"] ?? ($editItem["initial_qty"] ?? "0")) ?>">
-<div class="small-muted">Tip: on-hand can be set equal to initial quantity for new receipts.</div>
-</div>
-
-<div class="actions">
-<button type="submit"><?= $editItem ? "Save Changes" : "Add Item" ?></button>
-<?php if ($editItem): ?>
-<a href="inventory.php"><button type="button">Cancel</button></a>
-<?php endif; ?>
-</div>
-</form>
-</div>
-
-<table>
-<thead>
-<tr>
-<th>ID</th>
-<th>Shelter ID</th>
-<th>Name</th>
-<th>Type</th>
-<th>Unit</th>
-<th>Active</th>
-<th>Received</th>
-<th>Expiry</th>
-<th>Condition</th>
-<th>Initial Qty</th>
-<th>On-hand Qty</th>
-<th>Created</th>
-<th>Updated</th>
-<th>Operations</th>
-</tr>
-</thead>
-<tbody>
-<?php while ($row = $result->fetch_assoc()): ?>
-<tr>
-<td><?= (int)$row["item_id"] ?></td>
-<td><?= (int)$row["shelter_id"] ?></td>
-<td><?= h($row["item_name"]) ?></td>
-<td><?= h($row["item_type"]) ?></td>
-<td><?= h($row["unit"]) ?></td>
-<td><?= ((int)$row["active"] === 1) ? "Yes" : "No" ?></td>
-<td><?= h($row["received_date"]) ?></td>
-<td><?= h($row["expiry_date"]) ?></td>
-<td><?= h($row["notes"]) ?></td>
-<td><?= h($row["initial_qty"]) ?></td>
-<td><?= h($row["on_hand_qty"]) ?></td>
-<td><?= h($row["created_at"]) ?></td>
-<td><?= h($row["updated_at"]) ?></td>
-<td>
-<a href="inventory.php?edit=<?= (int)$row["item_id"] ?>">Edit</a>
-<form method="post" action="inventory.php" style="display:inline;">
-<input type="hidden" name="action" value="delete">
-<input type="hidden" name="item_id" value="<?= (int)$row["item_id"] ?>">
-<button type="submit" onclick="return confirm('Delete item #<?= (int)$row["item_id"] ?>?');">Delete</button>
-</form>
-</td>
-</tr>
-<?php endwhile; ?>
-</tbody>
-</table>
-
-</body>
-</html>

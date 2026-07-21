@@ -1,476 +1,274 @@
 <?php
-require_once __DIR__ . "/db_config.php";
 
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
+require_once __DIR__ . '/api-helper.php';
 
-$conn = new mysqli($dbHost, $dbUser, $dbPass, $dbName);
-if ($conn->connect_error) {
-    die("DB connection failed: " . $conn->connect_error);
+$method = getMethod();
+$id = getQuery('id');
+$body = getJsonBody();
+
+function buildDonationLineRows($body, $donation_id = null) {
+    $lines = $body['lines'] ?? [];
+    if (!empty($body['item_id']) && isset($body['item_quantity'])) {
+        $lines = [[
+            'item_id' => $body['item_id'],
+            'item_quantity' => $body['item_quantity'],
+            'line_notes' => $body['line_notes'] ?? null
+        ]];
+    }
+    $rows = [];
+    foreach ($lines as $ln) {
+        if (empty($ln['item_id']) || !isset($ln['item_quantity'])) continue;
+        $quantity = (float)$ln['item_quantity'];
+        if ($quantity <= 0) continue;
+        $row = [
+            'item_id' => (int)$ln['item_id'],
+            'item_quantity' => $quantity,
+            'line_notes' => $ln['line_notes'] ?? null
+        ];
+        if ($donation_id !== null) {
+            $row['donation_id'] = $donation_id;
+        }
+        $rows[] = $row;
+    }
+    return $rows;
 }
-$conn->set_charset("utf8mb4");
 
-function h($s) { return htmlspecialchars($s ?? "", ENT_QUOTES, "UTF-8"); }
+function validateDonationLineRows($rows) {
+    if (empty($rows)) {
+        respondError('Donation lines are required', 400);
+    }
+    foreach ($rows as $row) {
+        if (empty($row['item_id']) || $row['item_quantity'] <= 0) {
+            respondError('Donation item and quantity are required', 400);
+        }
+        $item = fetchOne('SELECT item_id FROM Items WHERE item_id = :id AND is_active = 1', ['id' => $row['item_id']]);
+        if (!$item) {
+            respondError('Invalid item selected', 400);
+        }
+    }
+}
 
-$shelters = $conn->query("SELECT shelter_id, shelter_name FROM Shelters ORDER BY shelter_id DESC");
-$suppliers = $conn->query("SELECT supplier_id, supplier_name FROM Suppliers ORDER BY supplier_id DESC");
+try {
+    requireAuth();
+    if ($method === 'GET') {
+        if ($id) {
+            $donation = fetchOne(
+                'SELECT d.*, s.shelter_name, su.supplier_name
+                 FROM Donations d
+                 LEFT JOIN Shelters s ON d.shelter_id = s.shelter_id
+                 LEFT JOIN Suppliers su ON d.supplier_id = su.supplier_id
+                 WHERE d.donation_id = :id',
+                ['id' => $id]
+            );
 
-$items = $conn->query("
-SELECT item_id, item_name, item_type, unit, shelter_id
-FROM Items
-WHERE active = 1
-ORDER BY item_id DESC
-");
+            if (!$donation) return respondError('Donation not found', 404);
+            if (!isGlobalReader() && !canAccessShelter($donation['shelter_id'])) {
+                return respondError('Access denied', 403);
+            }
 
-$donations = $conn->query("
-SELECT
-d.donation_id,
-d.donor_name,
-d.description,
-d.shelter_id,
-d.supplier_id,
-d.received_date,
-d.receipt_notes
-FROM Donations d
-ORDER BY d.donation_id DESC
-");
-
-if ($_SERVER["REQUEST_METHOD"] === "POST") {
-    $action = $_POST["action"] ?? "";
-
-    $donation_id = (int)($_POST["donation_id"] ?? 0);
-
-    $donor_name = trim($_POST["donor_name"] ?? "");
-    $description = trim($_POST["description"] ?? "");
-    $receipt_notes = trim($_POST["receipt_notes"] ?? "");
-
-    $shelter_id = $_POST["shelter_id"] ?? "";
-    $supplier_id = $_POST["supplier_id"] ?? "";
-
-    $shelter_id_param = ($shelter_id === "" ? null : (int)$shelter_id);
-    $supplier_id_param = ($supplier_id === "" ? null : (int)$supplier_id);
-
-    $received_date = trim($_POST["received_date"] ?? "");
-    if ($received_date === "") die("received_date is required.");
-
-    $donor_name_param = ($donor_name === "") ? null : $donor_name;
-    $description_param = ($description === "") ? null : $description;
-    $receipt_notes_param = ($receipt_notes === "") ? null : $receipt_notes;
-
-    $item_id = (int)($_POST["item_id"] ?? 0);
-    $item_quantity = trim($_POST["item_quantity"] ?? "");
-    if ($item_id <= 0) die("item_id is required.");
-    if ($item_quantity === "") $item_quantity = "0";
-
-    if ($action === "add") {
-        $stmt = $conn->prepare("
-        INSERT INTO Donations
-        (donor_name, description, shelter_id, supplier_id, received_date, receipt_notes)
-        VALUES
-        (?, ?, ?, ?, ?, ?)
-        ");
-        if (!$stmt) { die("Prepare failed (add donation): " . $conn->error); }
-
-        $stmt->bind_param(
-            "ssiiss",
-            $donor_name_param,
-            $description_param,
-            $shelter_id_param,
-            $supplier_id_param,
-            $received_date,
-            $receipt_notes_param
-        );
-        $stmt->close();
-
-        $stmt = $conn->prepare("
-        INSERT INTO Donations
-        (donor_name, description, shelter_id, supplier_id, received_date, receipt_notes)
-        VALUES
-        (?, ?, ?, ?, ?, ?)
-        ");
-        if (!$stmt) { die("Prepare failed (add donation re): " . $conn->error); }
-
-        $stmt->bind_param(
-            "ssiiss",
-            $donor_name_param,
-            $description_param,
-            $shelter_id_param,
-            $supplier_id_param,
-            $received_date,
-            $receipt_notes_param
-        );
-        $stmt->close();
-
-        $stmt = $conn->prepare("
-        INSERT INTO Donations
-        (donor_name, description, shelter_id, supplier_id, received_date, receipt_notes)
-        VALUES
-        (?, ?, ?, ?, ?, ?)
-        ");
-        if (!$stmt) { die("Prepare failed (add donation final): " . $conn->error); }
-
-        $stmt->bind_param(
-            "ss i i s s",
-            $donor_name_param,
-            $description_param,
-            $shelter_id_param,
-            $supplier_id_param,
-            $received_date,
-            $receipt_notes_param
-        );
-        $stmt->close();
-
-        if ($shelter_id_param === null && $supplier_id_param === null) {
-            $stmt = $conn->prepare("
-            INSERT INTO Donations
-            (donor_name, description, shelter_id, supplier_id, received_date, receipt_notes)
-            VALUES
-            (?, ?, NULL, NULL, ?, ?)
-            ");
-            $stmt->bind_param("ssss", $donor_name_param, $description_param, $received_date, $receipt_notes_param);
-        } elseif ($shelter_id_param === null) {
-            $stmt = $conn->prepare("
-            INSERT INTO Donations
-            (donor_name, description, shelter_id, supplier_id, received_date, receipt_notes)
-            VALUES
-            (?, ?, NULL, ?, ?, ?)
-            ");
-            $stmt->bind_param("ssiss", $donor_name_param, $description_param, $supplier_id_param, $received_date, $receipt_notes_param);
-        } elseif ($supplier_id_param === null) {
-            $stmt = $conn->prepare("
-            INSERT INTO Donations
-            (donor_name, description, shelter_id, supplier_id, received_date, receipt_notes)
-            VALUES
-            (?, ?, ?, NULL, ?, ?)
-            ");
-            $stmt->bind_param("ssiss", $donor_name_param, $description_param, $shelter_id_param, $received_date, $receipt_notes_param);
-        } else {
-            $stmt = $conn->prepare("
-            INSERT INTO Donations
-            (donor_name, description, shelter_id, supplier_id, received_date, receipt_notes)
-            VALUES
-            (?, ?, ?, ?, ?, ?)
-            ");
-            $stmt->bind_param("ssii ss", $donor_name_param, $description_param, $shelter_id_param, $supplier_id_param, $received_date, $receipt_notes_param);
-            $stmt->close();
+            $lines = fetchAll(
+                'SELECT donation_line_id, item_id, item_quantity, line_notes FROM DonationLines WHERE donation_id = :id',
+                ['id' => $id]
+            );
+            $donation['lines'] = $lines;
+            return respondSuccess(['donation' => $donation]);
         }
 
-        if ($shelter_id_param === null && $supplier_id_param === null) {
-            $stmt = $conn->prepare("
-            INSERT INTO Donations
-            (donor_name, description, shelter_id, supplier_id, received_date, receipt_notes)
-            VALUES
-            (?, ?, NULL, NULL, ?, ?)
-            ");
-            $stmt->bind_param("ssss", $donor_name_param, $description_param, $received_date, $receipt_notes_param);
-        } elseif ($shelter_id_param === null) {
-            $stmt = $conn->prepare("
-            INSERT INTO Donations
-            (donor_name, description, shelter_id, supplier_id, received_date, receipt_notes)
-            VALUES
-            (?, ?, NULL, ?, ?, ?)
-            ");
-            $stmt->bind_param("ssi ss", $donor_name_param, $description_param, $supplier_id_param, $received_date, $receipt_notes_param);
-            $stmt->close();
+        $sql = 'SELECT d.donation_id,
+                    d.donor_name,
+                    d.description,
+                    d.shelter_id,
+                    d.supplier_id,
+                    d.received_date,
+                    d.receipt_notes,
+                    d.created_at,
+                    s.shelter_name,
+                    su.supplier_name,
+                    dl.item_id,
+                    dl.item_quantity,
+                    i.item_name
+             FROM Donations d
+             LEFT JOIN Shelters s ON d.shelter_id = s.shelter_id
+             LEFT JOIN Suppliers su ON d.supplier_id = su.supplier_id
+             LEFT JOIN (
+                 SELECT donation_id, item_id, item_quantity, line_notes
+                 FROM DonationLines
+                 WHERE donation_line_id = (
+                     SELECT MIN(donation_line_id)
+                     FROM DonationLines dl2
+                     WHERE dl2.donation_id = DonationLines.donation_id
+                 )
+             ) dl ON dl.donation_id = d.donation_id
+             LEFT JOIN Items i ON i.item_id = dl.item_id
+             WHERE 1=1';
+
+        $params = [];
+        if (!isGlobalReader()) {
+            $allowedShelters = getCurrentShelterIds();
+            if (empty($allowedShelters)) {
+                return respondSuccess(['donations' => []]);
+            }
+            $placeholders = implode(',', array_fill(0, count($allowedShelters), '?'));
+            $sql .= ' AND d.shelter_id IN (' . $placeholders . ')';
+            $params = $allowedShelters;
         }
-
-        if ($shelter_id_param === null && $supplier_id_param === null) {
-            $stmt = $conn->prepare("
-            INSERT INTO Donations
-            (donor_name, description, shelter_id, supplier_id, received_date, receipt_notes)
-            VALUES
-            (?, ?, NULL, NULL, ?, ?)
-            ");
-            $stmt->bind_param("ssss", $donor_name_param, $description_param, $received_date, $receipt_notes_param);
-        } elseif ($shelter_id_param === null) {
-            $stmt = $conn->prepare("
-            INSERT INTO Donations
-            (donor_name, description, shelter_id, supplier_id, received_date, receipt_notes)
-            VALUES
-            (?, ?, NULL, ?, ?, ?)
-            ");
-            $stmt->bind_param("ssiss", $donor_name_param, $description_param, $supplier_id_param, $received_date, $receipt_notes_param);
-        } elseif ($supplier_id_param === null) {
-            $stmt = $conn->prepare("
-            INSERT INTO Donations
-            (donor_name, description, shelter_id, supplier_id, received_date, receipt_notes)
-            VALUES
-            (?, ?, ?, NULL, ?, ?)
-            ");
-            $stmt->bind_param("ssiss", $donor_name_param, $description_param, $shelter_id_param, $received_date, $receipt_notes_param);
-        } else {
-            $stmt = $conn->prepare("
-            INSERT INTO Donations
-            (donor_name, description, shelter_id, supplier_id, received_date, receipt_notes)
-            VALUES
-            (?, ?, ?, ?, ?, ?)
-            ");
-            $stmt->bind_param("ssiiss", $donor_name_param, $description_param, $shelter_id_param, $supplier_id_param, $received_date, $receipt_notes_param);
-        }
-
-        if (!$stmt->execute()) die("Execute failed (add donation): " . $stmt->error);
-        $donation_id = $conn->insert_id;
-        $stmt->close();
-
-        $stmt = $conn->prepare("
-        INSERT INTO DonationLines
-        (donation_id, item_id, item_quantity, line_notes)
-        VALUES
-        (?, ?, ?, NULL)
-        ");
-        if (!$stmt) { die("Prepare failed (add donation line): " . $conn->error); }
-
-        $stmt->bind_param("iid", $donation_id, $item_id, $item_quantity);
-        if (!$stmt->execute()) die("Execute failed (add donation line): " . $stmt->error);
-        $stmt->close();
-
-    } elseif ($action === "update") {
-        if ($shelter_id_param === null && $supplier_id_param === null) {
-            $stmt = $conn->prepare("
-            UPDATE Donations
-            SET donor_name = ?, description = ?, shelter_id = NULL, supplier_id = NULL, received_date = ?, receipt_notes = ?
-            WHERE donation_id = ?
-            ");
-            $stmt->bind_param("ssss i", $donor_name_param, $description_param, $received_date, $receipt_notes_param, $donation_id);
-            $stmt->close();
-        }
-
-        if ($shelter_id_param === null && $supplier_id_param === null) {
-            $stmt = $conn->prepare("
-            UPDATE Donations
-            SET donor_name = ?, description = ?, shelter_id = NULL, supplier_id = NULL, received_date = ?, receipt_notes = ?
-            WHERE donation_id = ?
-            ");
-            $stmt->bind_param("ssss i", $donor_name_param, $description_param, $received_date, $receipt_notes_param, $donation_id);
-        } elseif ($shelter_id_param === null) {
-            $stmt = $conn->prepare("
-            UPDATE Donations
-            SET donor_name = ?, description = ?, shelter_id = NULL, supplier_id = ?, received_date = ?, receipt_notes = ?
-            WHERE donation_id = ?
-            ");
-            $stmt->bind_param("ssiss i", $donor_name_param, $description_param, $supplier_id_param, $received_date, $receipt_notes_param, $donation_id);
-        } elseif ($supplier_id_param === null) {
-            $stmt = $conn->prepare("
-            UPDATE Donations
-            SET donor_name = ?, description = ?, shelter_id = ?, supplier_id = NULL, received_date = ?, receipt_notes = ?
-            WHERE donation_id = ?
-            ");
-            $stmt->bind_param("ssiss i", $donor_name_param, $description_param, $shelter_id_param, $received_date, $receipt_notes_param, $donation_id);
-        } else {
-            $stmt = $conn->prepare("
-            UPDATE Donations
-            SET donor_name = ?, description = ?, shelter_id = ?, supplier_id = ?, received_date = ?, receipt_notes = ?
-            WHERE donation_id = ?
-            ");
-            $stmt->bind_param("ssiisi i", $donor_name_param, $description_param, $shelter_id_param, $supplier_id_param, $received_date, $receipt_notes_param, $donation_id);
-        }
-
-        if (!$stmt->execute()) die("Execute failed (update donation): " . $stmt->error);
-        $stmt->close();
-
-        $stmt = $conn->prepare("DELETE FROM DonationLines WHERE donation_id = ?");
-        $stmt->bind_param("i", $donation_id);
-        $stmt->execute();
-        $stmt->close();
-
-        $stmt = $conn->prepare("
-        INSERT INTO DonationLines
-        (donation_id, item_id, item_quantity, line_notes)
-        VALUES
-        (?, ?, ?, NULL)
-        ");
-        $stmt->bind_param("iid", $donation_id, $item_id, $item_quantity);
-        if (!$stmt->execute()) die("Execute failed (update donation line): " . $stmt->error);
-        $stmt->close();
-
-    } elseif ($action === "delete") {
-        $stmt = $conn->prepare("DELETE FROM Donations WHERE donation_id = ?");
-        $stmt->bind_param("i", $donation_id);
-        $stmt->execute();
-        $stmt->close();
+        $sql .= ' ORDER BY d.received_date DESC, d.donation_id DESC';
+        $donations = fetchAll($sql, $params);
+        return respondSuccess(['donations' => $donations]);
     }
 
-    //header("Location: " . strtok($_SERVER["REQUEST_URI"], "?"));
-    //exit;
+    if ($method === 'POST') {
+        ensureRoles(['superadmin','shelter_manager','staff']);
+        $body = requireJsonBody();
+        @file_put_contents(__DIR__ . '/donations_debug.log', date('c') . " POST payload: " . json_encode($body) . "\n", FILE_APPEND);
+        $donor_name = sanitize($body['donor_name'] ?? null);
+        $description = sanitize($body['description'] ?? null);
+        $shelter_id = !empty($body['shelter_id']) ? (int)$body['shelter_id'] : null;
+        $supplier_id = !empty($body['supplier_id']) ? (int)$body['supplier_id'] : null;
+        $received_date = sanitize($body['received_date'] ?? date('Y-m-d'));
+        $receipt_notes = sanitize($body['receipt_notes'] ?? null);
+        $lines = $body['lines'] ?? [];
+
+        if (!$shelter_id) {
+            return respondError('Shelter is required', 400);
+        }
+        if (!isGlobalReader() && !canAccessShelter($shelter_id)) {
+            return respondError('Access denied', 403);
+        }
+
+        $rows = buildDonationLineRows($body);
+        validateDonationLineRows($rows);
+
+        $donation_id = null;
+        tryTransaction(function() use ($body, $donor_name, $description, $shelter_id, $supplier_id, $received_date, $receipt_notes, &$donation_id) {
+            global $pdo;
+            $stmt = $pdo->prepare(
+                'INSERT INTO Donations (donor_name, description, shelter_id, supplier_id, received_date, receipt_notes)
+                 VALUES (:donor_name, :description, :shelter_id, :supplier_id, :received_date, :receipt_notes)'
+            );
+            $stmt->execute([
+                'donor_name' => $donor_name,
+                'description' => $description,
+                'shelter_id' => $shelter_id,
+                'supplier_id' => $supplier_id,
+                'received_date' => $received_date,
+                'receipt_notes' => $receipt_notes
+            ]);
+            $donation_id = $pdo->lastInsertId();
+            @file_put_contents(__DIR__ . '/donations_debug.log', date('c') . " Inserted donation_id: $donation_id\n", FILE_APPEND);
+
+            $rows = buildDonationLineRows($body, $donation_id);
+            if (empty($rows)) {
+                throw new Exception('Donation lines are required');
+            }
+            insertMany('DonationLines', ['donation_id','item_id','item_quantity','line_notes'], $rows);
+            @file_put_contents(__DIR__ . '/donations_debug.log', date('c') . " Inserted donation lines for donation_id: $donation_id (rows: " . count($rows) . ")\n", FILE_APPEND);
+            return true;
+        });
+        return respondSuccess(['success' => true, 'donation_id' => (int)$donation_id], 201);
+    }
+
+    if ($method === 'PUT') {
+        ensureRoles(['superadmin','shelter_manager']);
+        if (!$body) return respondError('Invalid JSON body', 400);
+        $donation_id = $body['donation_id'] ?? null;
+        if (!$donation_id) return respondError('donation_id is required', 400);
+
+        $donor_name = sanitize($body['donor_name'] ?? null);
+        $description = sanitize($body['description'] ?? null);
+        $shelter_id = isset($body['shelter_id']) ? (int)$body['shelter_id'] : null;
+        $supplier_id = !empty($body['supplier_id']) ? (int)$body['supplier_id'] : null;
+        $received_date = sanitize($body['received_date'] ?? null);
+        $receipt_notes = sanitize($body['receipt_notes'] ?? null);
+        $lines = $body['lines'] ?? [];
+
+        $existingDon = fetchOne('SELECT shelter_id FROM Donations WHERE donation_id = :id LIMIT 1', ['id' => $donation_id]);
+        if (!$existingDon) return respondError('Donation not found', 404);
+        if (!isGlobalReader() && !canAccessShelter($existingDon['shelter_id'])) {
+            return respondError('Access denied', 403);
+        }
+        if ($shelter_id && !isGlobalReader() && !canAccessShelter($shelter_id)) {
+            return respondError('Access denied', 403);
+        }
+
+        $rows = buildDonationLineRows($body);
+        validateDonationLineRows($rows);
+
+        tryTransaction(function() use ($body, $donation_id, $donor_name, $description, $shelter_id, $supplier_id, $received_date, $receipt_notes, $rows, $existingDon) {
+            global $pdo;
+
+            $oldLines = fetchAll('SELECT item_id, item_quantity FROM DonationLines WHERE donation_id = :id', ['id' => $donation_id]);
+            foreach ($oldLines as $oldLine) {
+                execute('UPDATE Items SET on_hand_qty = on_hand_qty - :qty WHERE item_id = :item_id', [
+                    'qty' => $oldLine['item_quantity'],
+                    'item_id' => $oldLine['item_id']
+                ]);
+            }
+
+            $stmt = $pdo->prepare(
+                'UPDATE Donations
+                 SET donor_name = :donor_name,
+                     description = :description,
+                     shelter_id = :shelter_id,
+                     supplier_id = :supplier_id,
+                     received_date = :received_date,
+                     receipt_notes = :receipt_notes
+                 WHERE donation_id = :donation_id'
+            );
+            $stmt->execute([
+                'donor_name' => $donor_name,
+                'description' => $description,
+                'shelter_id' => $shelter_id ?: $existingDon['shelter_id'],
+                'supplier_id' => $supplier_id ?: null,
+                'received_date' => $received_date,
+                'receipt_notes' => $receipt_notes,
+                'donation_id' => $donation_id
+            ]);
+
+            $pdo->prepare('DELETE FROM DonationLines WHERE donation_id = :donation_id')->execute(['donation_id' => $donation_id]);
+            $rows = buildDonationLineRows($body, $donation_id);
+            if (empty($rows)) {
+                throw new Exception('Donation lines are required');
+            }
+            insertMany('DonationLines', ['donation_id','item_id','item_quantity','line_notes'], $rows);
+            return true;
+        });
+        return respondSuccess(['success' => true]);
+    }
+
+    if ($method === 'DELETE') {
+        ensureRoles(['superadmin','shelter_manager']);
+        if (!$body) return respondError('Invalid JSON body', 400);
+        $donation_id = $body['donation_id'] ?? null;
+        if (!$donation_id) return respondError('donation_id is required', 400);
+
+        $existingDon = fetchOne('SELECT shelter_id FROM Donations WHERE donation_id = :id LIMIT 1', ['id' => $donation_id]);
+        if (!$existingDon) return respondError('Donation not found', 404);
+        if (!isGlobalReader() && !canAccessShelter($existingDon['shelter_id'])) {
+            return respondError('Access denied', 403);
+        }
+
+        tryTransaction(function() use ($donation_id) {
+            $oldLines = fetchAll('SELECT item_id, item_quantity FROM DonationLines WHERE donation_id = :id', ['id' => $donation_id]);
+            foreach ($oldLines as $oldLine) {
+                execute('UPDATE Items SET on_hand_qty = on_hand_qty - :qty WHERE item_id = :item_id', [
+                    'qty' => $oldLine['item_quantity'],
+                    'item_id' => $oldLine['item_id']
+                ]);
+            }
+            execute('DELETE FROM DonationLines WHERE donation_id = :donation_id', ['donation_id' => $donation_id]);
+            execute('DELETE FROM Donations WHERE donation_id = :donation_id', ['donation_id' => $donation_id]);
+            return true;
+        });
+
+        return respondSuccess(['success' => true]);
+    }
+
+    respondError('Method not allowed', 405);
+} catch (Throwable $e) {
+    if (isset($pdo) && $pdo && method_exists($pdo, 'inTransaction') && $pdo->inTransaction()) $pdo->rollBack();
+    
+    @file_put_contents(__DIR__ . '/donations_error.log', date('c') . " " . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n\n", FILE_APPEND);
+    respondError('Server error: ' . $e->getMessage(), 500);
 }
 
-$editDonation = null;
-$editLine = null;
-
-if (isset($_GET["edit"])) {
-    $editId = (int)$_GET["edit"];
-
-    $stmt = $conn->prepare("
-    SELECT
-    donation_id,
-    donor_name,
-    description,
-    shelter_id,
-    supplier_id,
-    received_date,
-    receipt_notes
-    FROM Donations
-    WHERE donation_id = ?
-    ");
-    $stmt->bind_param("i", $editId);
-    $stmt->execute();
-    $editDonation = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    $stmt = $conn->prepare("
-    SELECT item_id, item_quantity
-    FROM DonationLines
-    WHERE donation_id = ?
-    LIMIT 1
-    ");
-    $stmt->bind_param("i", $editId);
-    $stmt->execute();
-    $editLine = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-}
-?>
-<!doctype html>
-<html>
-<head>
-<meta charset="utf-8" />
-<title>Donations</title>
-<style>
-body { font-family: Arial, sans-serif; margin: 20px; }
-table { border-collapse: collapse; width: 100%; margin-top: 16px; }
-th, td { border: 1px solid #ddd; padding: 8px; }
-th { background: #f4f4f4; }
-form { margin: 0; }
-.row { margin-bottom: 10px; }
-input[type="text"], input[type="number"], input[type="date"], select { padding: 6px; width: 100%; max-width: 420px; }
-.actions button { padding: 6px 10px; margin-right: 6px; }
-.card { border: 1px solid #ddd; padding: 14px; border-radius: 6px; max-width: 980px; }
-.small-muted { color: #666; font-size: 12px; margin-top: 6px; }
-</style>
-</head>
-<body>
-<h2>Donations</h2>
-
-<div class="card">
-<h3><?= $editDonation ? "Edit Donation" : "Add Donation" ?></h3>
-
-<form method="post" action="donations.php">
-<input type="hidden" name="action" value="<?= $editDonation ? "update" : "add" ?>">
-<?php if ($editDonation): ?>
-<input type="hidden" name="donation_id" value="<?= (int)$editDonation["donation_id"] ?>">
-<?php endif; ?>
-
-<div class="row">
-<label>Donor Name (optional)</label><br>
-<input type="text" name="donor_name" value="<?= h($editDonation["donor_name"] ?? "") ?>">
-</div>
-
-<div class="row">
-<label>Description (optional)</label><br>
-<input type="text" name="description" value="<?= h($editDonation["description"] ?? "") ?>">
-</div>
-
-<div class="row">
-<label>Shelter (optional)</label><br>
-<select name="shelter_id">
-<option value="" <?= (!isset($editDonation["shelter_id"]) || $editDonation["shelter_id"] === null || (int)$editDonation["shelter_id"] === 0) ? "selected" : "" ?>>-- Select Shelter (optional) --</option>
-<?php while ($srow = $shelters->fetch_assoc()): ?>
-<?php $sid = (int)$srow["shelter_id"]; ?>
-<option value="<?= $sid ?>" <?= ((int)($editDonation["shelter_id"] ?? 0) === $sid) ? "selected" : "" ?>>
-<?= h($srow["shelter_name"]) ?> (<?= $sid ?>)
-</option>
-<?php endwhile; ?>
-</select>
-</div>
-
-<div class="row">
-<label>Supplier (optional)</label><br>
-<select name="supplier_id">
-<option value="" <?= (!isset($editDonation["supplier_id"]) || $editDonation["supplier_id"] === null || (int)$editDonation["supplier_id"] === 0) ? "selected" : "" ?>>-- Select Supplier (optional) --</option>
-<?php while ($sup = $suppliers->fetch_assoc()): ?>
-<?php $spid = (int)$sup["supplier_id"]; ?>
-<option value="<?= $spid ?>" <?= ((int)($editDonation["supplier_id"] ?? 0) === $spid) ? "selected" : "" ?>>
-<?= h($sup["supplier_name"]) ?> (<?= $spid ?>)
-</option>
-<?php endwhile; ?>
-</select>
-</div>
-
-<div class="row">
-<label>Received Date</label><br>
-<input type="date" name="received_date" required value="<?= h($editDonation["received_date"] ?? date('Y-m-d')) ?>">
-</div>
-
-<div class="row">
-<label>Receipt Notes (optional)</label><br>
-<input type="text" name="receipt_notes" value="<?= h($editDonation["receipt_notes"] ?? "") ?>">
-</div>
-
-<div class="row">
-<label>Donation Line Item</label><br>
-<select name="item_id" required>
-<option value="">-- Select Item --</option>
-<?php
-$selectedItemId = (int)($editLine["item_id"] ?? 0);
-while ($irow = $items->fetch_assoc()):
-    $iid = (int)$irow["item_id"];
-?>
-<option value="<?= $iid ?>" <?= ($selectedItemId === $iid) ? "selected" : "" ?>>
-<?= h($irow["item_name"]) ?> (<?= h($irow["unit"]) ?>) - <?= h($irow["item_type"]) ?> [Shelter <?= (int)$irow["shelter_id"] ?>]
-</option>
-<?php endwhile; ?>
-</select>
-</div>
-
-<div class="row">
-<label>Item Quantity</label><br>
-<input type="number" step="0.001" name="item_quantity" required value="<?= h($editLine["item_quantity"] ?? "0") ?>">
-</div>
-
-<div class="actions">
-<button type="submit"><?= $editDonation ? "Save Changes" : "Add Donation" ?></button>
-<?php if ($editDonation): ?>
-<a href="donations.php"><button type="button">Cancel</button></a>
-<?php endif; ?>
-</div>
-</form>
-</div>
-
-<table>
-<thead>
-<tr>
-<th>Donation ID</th>
-<th>Donor</th>
-<th>Description</th>
-<th>Shelter ID</th>
-<th>Supplier ID</th>
-<th>Received</th>
-<th>Receipt Notes</th>
-<th>Operations</th>
-</tr>
-</thead>
-<tbody>
-<?php while ($row = $donations->fetch_assoc()): ?>
-<tr>
-<td><?= (int)$row["donation_id"] ?></td>
-<td><?= h($row["donor_name"]) ?></td>
-<td><?= h($row["description"]) ?></td>
-<td><?= $row["shelter_id"] === null ? "" : (int)$row["shelter_id"] ?></td>
-<td><?= $row["supplier_id"] === null ? "" : (int)$row["supplier_id"] ?></td>
-<td><?= h($row["received_date"]) ?></td>
-<td><?= h($row["receipt_notes"]) ?></td>
-<td>
-<a href="donations.php?edit=<?= (int)$row["donation_id"] ?>">Edit</a>
-<form method="post" action="donations.php" style="display:inline;">
-<input type="hidden" name="action" value="delete">
-<input type="hidden" name="donation_id" value="<?= (int)$row["donation_id"] ?>">
-<button type="submit" onclick="return confirm('Delete donation #<?= (int)$row["donation_id"] ?>?');">Delete</button>
-</form>
-</td>
-</tr>
-<?php endwhile; ?>
-</tbody>
-</table>
-
-</body>
-</html>

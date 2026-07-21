@@ -1,0 +1,97 @@
+
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+  <style>
+      .sidebar {
+        font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
+      }
+      .sidebar .nav-icon i { font-size: 16px; line-height: 1; }
+      .sidebar-brand .logo {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        text-align: center;
+      }
+      .sidebar-brand .logo-icon {
+        width: 54px;
+        height: 54px;
+        margin-bottom: 2px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        border-radius: 14px;
+        background: #1a6b4a;
+        box-shadow: 0 4px 14px rgba(26,107,74,0.45);
+      }
+      .sidebar-brand .logo-icon img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .sidebar-brand h1 {
+        font-size: 15px;
+        font-weight: 700;
+        letter-spacing: -0.2px;
+        line-height: 1.1;
+        margin: 0;
+        text-align: center;
+      }
+    </style>
+    
+    <div class="sidebar">
+      <div class="sidebar-brand">
+        <div class="logo">
+          <div class="logo-icon">
+            <img src="openARMS.png" alt="openARMS logo">
+          </div>
+          <h1>openARMS</h1>
+        </div>
+      </div>
+        <div id="sidebar-user" class="sidebar-user-container"></div>
+    
+      <nav class="sidebar-nav">
+        <a href="dashboard.html" class="nav-item">
+          <span class="nav-icon"><i class="bi bi-speedometer2"></i></span>
+          <span class="nav-label">Dashboard</span>
+        </a>
+        <a href="inventory.html" class="nav-item">
+          <span class="nav-icon"><i class="bi bi-box-seam"></i></span>
+          <span class="nav-label">Inventory</span>
+        </a>
+        <a href="donation.html" class="nav-item">
+          <span class="nav-icon"><i class="bi bi-heart-fill"></i></span>
+          <span class="nav-label">Donations</span>
+        </a>
+        <a href="supplier.html" class="nav-item">
+          <span class="nav-icon"><i class="bi bi-truck"></i></span>
+          <span class="nav-label">Suppliers</span>
+        </a>
+        <a href="log.html" class="nav-item">
+          <span class="nav-icon"><i class="bi bi-list-ul"></i></span>
+          <span class="nav-label">Stock Log</span>
+        </a>
+        <a href="register.html" class="nav-item">
+          <span class="nav-icon"><i class="bi bi-person-plus"></i></span>
+          <span class="nav-label">Register</span>
+        </a>
+        <a href="shelters_admin.html" class="nav-item">
+          <span class="nav-icon"><i class="bi bi-house-fill"></i></span>
+          <span class="nav-label">Shelters</span>
+        </a>
+        <a href="report.html" class="nav-item">
+          <span class="nav-icon"><i class="bi bi-bar-chart-fill"></i></span>
+          <span class="nav-label">Reports</span>
+        </a>
+        <a href="audit.html" class="nav-item">
+          <span class="nav-icon"><i class="bi bi-journal-text"></i></span>
+          <span class="nav-label">Audit Log</span>
+        </a>
+      </nav>
+    
+      <div class="sidebar-footer">openARMS v1.0</div>
+    </div>

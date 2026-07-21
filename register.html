@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Manage Users</title>
+  <link rel="stylesheet" href="common.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <div id="sidebar-container"></div>
+  <main class="main">
+    <div class="topbar">
+      <div class="topbar-title">Manage Users</div>
+      <div class="topbar-right"></div>
+    </div>
+    <div class="content">
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" placeholder="Search users" id="user-search" oninput="filterUsers()">
+          </div>
+        </div>
+        <button class="btn btn-primary" type="button" onclick="openAddUser()">+ Add User</button>
+      </div>
+      <div class="card">
+        <div class="card-title">Users</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Username</th><th>Role(s)</th><th>Phone</th><th>Active</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="users-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<div class="modal-overlay" id="modal-user">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title" id="user-modal-title">Add User</h2>
+      <button class="modal-close" onclick="closeModal('modal-user')">×</button>
+    </div>
+    <div class="form-grid">
+      <input type="hidden" id="person-id">
+      <div class="form-group full"><label>Full Name *</label><input type="text" id="person-name" placeholder="John Testing"></div>
+      <div class="form-group"><label>Username *</label><input type="text" id="person-username" placeholder="JohnTesting@openARMS.com"></div>
+      <div class="form-group"><label>Password</label><input type="password" id="person-password" placeholder="Leave blank to keep current"></div>
+      <div class="form-group"><label>Confirm Password</label><input type="password" id="person-password-confirm" placeholder="Re-enter password"></div>
+      <div class="form-group"><label>Phone Number</label><input type="text" id="person-phone" placeholder="Optional contact number"></div>
+      <div class="form-group"><label>Role *</label>
+        <select id="person-role">
+          <option value="">Choose role</option>
+          <option value="superadmin">Administrator</option>
+          <option value="shelter_manager">Shelter Manager</option>
+          <option value="staff">Staff</option>
+          <option value="volunteer">Volunteer</option>
+          <option value="auditor">Auditor</option>
+        </select>
+      </div>
+      <div class="form-group full"><label id="shelter-label">Shelter</label>
+        <select id="person-shelter"><option value="">Choose shelter</option></select>
+      </div>
+      <div class="form-group"><label>Active</label>
+        <label class="remember"><input type="checkbox" id="person-active" checked> Active</label>
+      </div>
+    </div>
+    <div class="modal-footer modal-footer-start">
+      <button class="btn btn-secondary" onclick="closeModal('modal-user')">Cancel</button>
+      <button class="btn btn-danger" id="delete-person-btn" type="button" onclick="deleteUser()" style="display:none;">Delete</button>
+      <button class="btn btn-primary" id="save-person-btn" onclick="savePersonnel()">Create User</button>
+    </div>
+  </div>
+</div>
+<script src="app-common.js"></script>
+<script src="register.js"></script>
+</body>
+</html>

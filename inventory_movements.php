@@ -1,620 +1,352 @@
 <?php
-require_once __DIR__ . "/db_config.php";
 
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
+require_once __DIR__ . '/api-helper.php';
 
-$conn = new mysqli($dbHost, $dbUser, $dbPass, $dbName);
-if ($conn->connect_error) {
-    die("DB connection failed: " . $conn->connect_error);
-}
-$conn->set_charset("utf8mb4");
+$method = getMethod();
+$id = getQuery('id');
+$body = getJsonBody();
 
-function h($s) { return htmlspecialchars($s ?? "", ENT_QUOTES, "UTF-8"); }
-
-function toFloat($v) {
-    $v = trim((string)$v);
-    if ($v === '') return 0.0;
-    return (float)$v;
+function adjustItemQuantity($item_id, $delta) {
+    if (!$item_id || $delta === 0) return;
+    execute('UPDATE Items SET on_hand_qty = on_hand_qty + :delta WHERE item_id = :item_id', [
+        'delta' => $delta,
+        'item_id' => $item_id
+    ]);
 }
 
-function fetchItemsByShelter($conn, $shelter_id) {
-    $stmt = $conn->prepare("
-    SELECT item_id, item_name, unit
-    FROM Items
-    WHERE shelter_id = ? AND active = 1
-    ORDER BY item_id DESC
-    ");
-    $stmt->bind_param("i", $shelter_id);
-    $stmt->execute();
-
-    $stmt->bind_result($item_id, $item_name, $unit);
-
-    $rows = [];
-    while ($stmt->fetch()) {
-        $rows[] = [
-            "item_id" => $item_id,
-            "item_name" => $item_name,
-            "unit" => $unit
-        ];
+function getQuantityDelta($transaction_type, $quantity) {
+    $quantity = (float)$quantity;
+    if ($transaction_type === 'IN') {
+        return $quantity;
     }
-
-    $stmt->close();
-    return $rows;
+    if ($transaction_type === 'OUT') {
+        return -$quantity;
+    }
+    if ($transaction_type === 'ADJUST') {
+        return $quantity;
+    }
+    return 0;
 }
 
-$shelters = $conn->query("SELECT shelter_id, shelter_name FROM Shelters ORDER BY shelter_id DESC");
-$personnel = $conn->query("SELECT personnel_id, personnel_name FROM Personnel ORDER BY personnel_id DESC");
+requireAuth();
 
-$editMovement = null;
-$movement_to_edit = isset($_GET["edit"]) ? (int)$_GET["edit"] : 0;
+if ($method === 'GET') {
+    if ($id) {
+        $movement = fetchOne(
+            'SELECT l.transaction_id,
+                    l.transaction_date,
+                    l.item_id,
+                    i.item_name AS item_name,
+                    i.unit AS unit,
+                    l.shelter_id,
+                    s.shelter_name,
+                    l.quantity,
+                    l.transaction_type AS action,
+                    l.personnel_id,
+                    p.personnel_name AS performed_by,
+                    l.transaction_notes AS reason,
+                    l.created_at AS logged_at
+             FROM InventoryLogs l
+             LEFT JOIN Items i ON i.item_id = l.item_id
+             LEFT JOIN Shelters s ON s.shelter_id = l.shelter_id
+             LEFT JOIN Personnel p ON p.personnel_id = l.personnel_id
+             WHERE l.transaction_id = :id',
+            ['id' => $id]
+        );
 
-if ($movement_to_edit > 0) {
-    $stmt = $conn->prepare("
-        SELECT
-            transaction_id, transaction_date,
-            item_id, shelter_id,
-            quantity, transaction_type,
-            personnel_id, transaction_notes,
-            created_at
-        FROM InventoryLogs
-        WHERE transaction_id = ?
-    ");
-    $stmt->bind_param("i", $movement_to_edit);
-    $stmt->execute();
-    $editMovement = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-}
-
-if ($_SERVER["REQUEST_METHOD"] === "POST") {
-    $action = $_POST["action"] ?? "";
-
-    if ($action === "reload_items") {
-        $itemsForForm = [];
-
-        if (isset($_POST["shelter_id"])) {
-            $itemsForForm = fetchItemsByShelter($conn, (int)$_POST["shelter_id"]);
+        if (!$movement) {
+            respondError('Log not found', 404);
+        }
+        if (!isSuperadmin() && !canAccessShelter($movement['shelter_id'])) {
+            respondError('Access denied', 403);
         }
 
-        goto render_page;
+        respondSuccess(['log' => $movement]);
+    } else {
+        $allowedShelters = getCurrentShelterIds();
+        $sql = 'SELECT l.transaction_id,
+                    l.transaction_date,
+                    l.item_id,
+                    i.item_name AS item_name,
+                    i.unit AS unit,
+                    l.shelter_id,
+                    s.shelter_name,
+                    l.quantity,
+                    l.transaction_type AS action,
+                    l.personnel_id,
+                    p.personnel_name AS performed_by,
+                    l.transaction_notes AS reason,
+                    l.created_at AS logged_at
+             FROM InventoryLogs l
+             LEFT JOIN Items i ON i.item_id = l.item_id
+             LEFT JOIN Shelters s ON s.shelter_id = l.shelter_id
+             LEFT JOIN Personnel p ON p.personnel_id = l.personnel_id';
+        $params = [];
+        if (!isSuperadmin()) {
+            if (empty($allowedShelters)) {
+                respondSuccess(['logs' => []]);
+            }
+            $placeholders = implode(',', array_fill(0, count($allowedShelters), '?'));
+            $sql .= ' WHERE l.shelter_id IN (' . $placeholders . ')';
+            $params = $allowedShelters;
+        }
+        $sql .= ' ORDER BY l.transaction_id DESC';
+        $movements = fetchAll($sql, $params);
+        respondSuccess(['logs' => $movements]);
     }
 
-    $transaction_type = $_POST["transaction_type"] ?? "";
+} elseif ($method === 'POST') {
+    ensureRoles(['superadmin','shelter_manager','staff','volunteer']);
+    $body = requireJsonBody();
+    validateRequired($body, ['item_id', 'quantity']);
 
-    $transaction_date = trim($_POST["transaction_date"] ?? "");
-    $quantity = toFloat($_POST["quantity"] ?? "0");
-
-    $personnel_id = (int)($_POST["personnel_id"] ?? 0);
-    $transaction_notes = trim($_POST["transaction_notes"] ?? "");
-    $transaction_notes_param = ($transaction_notes === "") ? null : $transaction_notes;
-
-    if ($transaction_date === "") {
-        die("transaction_date is required.");
+    $item_id = (int)$body['item_id'];
+    $transaction_type = sanitize($body['transaction_type'] ?? $body['action'] ?? null); 
+    $quantity = (float)$body['quantity'];
+    $shelter_id = !empty($body['shelter_id']) ? (int)$body['shelter_id'] : null;
+    $personnel_id = null;
+    if (isset($body['personnel_id']) && is_numeric($body['personnel_id'])) {
+        $personnel_id = (int)$body['personnel_id'];
+    } elseif (!empty($body['performed_by'])) {
+        $found = fetchOne(
+            'SELECT personnel_id FROM Personnel WHERE username = :name OR personnel_name = :name LIMIT 1',
+            ['name' => trim($body['performed_by'])]
+        );
+        $personnel_id = $found['personnel_id'] ?? null;
     }
+    $transaction_notes = sanitize($body['transaction_notes'] ?? $body['reason'] ?? null);
+
+    if (!$shelter_id) {
+        $itemShelter = fetchOne('SELECT shelter_id FROM Items WHERE item_id = :item_id LIMIT 1', ['item_id' => $item_id]);
+        $shelter_id = $itemShelter['shelter_id'] ?? null;
+    }
+
+    if (!$personnel_id) {
+        $personnel_id = getCurrentPersonnelId();
+        if (!$personnel_id) {
+            $fallback = fetchOne('SELECT personnel_id FROM Personnel WHERE is_active = 1 ORDER BY personnel_id LIMIT 1');
+            $personnel_id = $fallback['personnel_id'] ?? null;
+        }
+    }
+
+    if (!in_array($transaction_type, ['IN', 'OUT', 'TRANSFER', 'ADJUST'])) {
+        respondError('Invalid transaction_type', 400);
+    }
+
     if ($quantity <= 0) {
-        die("quantity must be > 0.");
-    }
-    if ($personnel_id <= 0) {
-        die("personnel_id is required.");
+        respondError('Quantity must be greater than 0', 400);
     }
 
-    $conn->begin_transaction();
+    if (!$shelter_id) {
+        respondError('Shelter is required for inventory movement', 400);
+    }
+
+    if (!$personnel_id) {
+        respondError('A valid personnel record is required for inventory movement', 400);
+    }
+
+    $destination_shelter_id = !empty($body['destination_shelter_id']) ? (int)$body['destination_shelter_id'] : null;
+    if ($transaction_type === 'TRANSFER') {
+        if (!$destination_shelter_id) {
+            respondError('Destination shelter is required for transfer', 400);
+        }
+        if ($destination_shelter_id === $shelter_id) {
+            respondError('Destination shelter must be different from the source shelter', 400);
+        }
+    }
+
+    if (!isSuperadmin()) {
+        if (!canAccessShelter($shelter_id)) {
+            respondError('Access denied', 403);
+        }
+        if ($transaction_type === 'TRANSFER' && !canAccessShelter($destination_shelter_id)) {
+            respondError('Access denied for destination shelter', 403);
+        }
+    }
+
+    $result = tryTransaction(function() use ($item_id, $shelter_id, $quantity, $transaction_type, $personnel_id, $transaction_notes, $destination_shelter_id) {
+        if ($transaction_type === 'TRANSFER') {
+            $sourceItem = fetchOne('SELECT item_name, item_type, unit, received_date, expiry_date, notes, item_properties, on_hand_qty FROM Items WHERE item_id = :item_id LIMIT 1', ['item_id' => $item_id]);
+            if (!$sourceItem) {
+                respondError('Source item not found', 404);
+            }
+            if ($sourceItem['on_hand_qty'] < $quantity) {
+                respondError('Not enough stock to transfer', 400);
+            }
+
+            $destinationShelter = fetchOne('SELECT shelter_name FROM Shelters WHERE shelter_id = :shelter_id LIMIT 1', ['shelter_id' => $destination_shelter_id]);
+            if (!$destinationShelter) {
+                respondError('Destination shelter not found', 404);
+            }
+
+            $sourceShelter = fetchOne('SELECT shelter_name FROM Shelters WHERE shelter_id = :shelter_id LIMIT 1', ['shelter_id' => $shelter_id]);
+            $sourceShelterName = $sourceShelter['shelter_name'] ?? 'Unknown';
+            $destShelterName = $destinationShelter['shelter_name'];
+
+            execute('UPDATE Items SET on_hand_qty = on_hand_qty - :quantity WHERE item_id = :item_id', ['quantity' => $quantity, 'item_id' => $item_id]);
+
+            $destinationItem = fetchOne(
+                'SELECT item_id, on_hand_qty FROM Items WHERE shelter_id = :shelter_id AND item_name = :item_name AND item_type = :item_type AND unit = :unit AND expiry_date <=> :expiry_date LIMIT 1',
+                [
+                    'shelter_id' => $destination_shelter_id,
+                    'item_name' => $sourceItem['item_name'],
+                    'item_type' => $sourceItem['item_type'],
+                    'unit' => $sourceItem['unit'],
+                    'expiry_date' => $sourceItem['expiry_date']
+                ]
+            );
+
+            if ($destinationItem) {
+                execute('UPDATE Items SET on_hand_qty = on_hand_qty + :quantity, initial_qty = initial_qty + :quantity WHERE item_id = :item_id', [
+                    'quantity' => $quantity,
+                    'item_id' => $destinationItem['item_id']
+                ]);
+                $destinationItemId = $destinationItem['item_id'];
+            } else {
+                $insertResult = execute(
+                    'INSERT INTO Items (shelter_id, item_name, item_type, unit, item_properties, on_hand_qty, initial_qty, received_date, expiry_date, notes)
+                     VALUES (:shelter_id, :item_name, :item_type, :unit, :item_properties, :on_hand_qty, :initial_qty, :received_date, :expiry_date, :notes)',
+                    [
+                        'shelter_id' => $destination_shelter_id,
+                        'item_name' => $sourceItem['item_name'],
+                        'item_type' => $sourceItem['item_type'],
+                        'unit' => $sourceItem['unit'],
+                        'item_properties' => $sourceItem['item_properties'],
+                        'on_hand_qty' => $quantity,
+                        'initial_qty' => $quantity,
+                        'received_date' => $sourceItem['received_date'] ?: date('Y-m-d'),
+                        'expiry_date' => $sourceItem['expiry_date'],
+                        'notes' => $sourceItem['notes']
+                    ]
+                );
+                $destinationItemId = $insertResult['last_insert_id'];
+            }
+
+            execute(
+                'INSERT INTO InventoryLogs (transaction_date, item_id, shelter_id, quantity, transaction_type, personnel_id, transaction_notes)
+                 VALUES (CURDATE(), :item_id, :shelter_id, :quantity, :transaction_type, :personnel_id, :transaction_notes)',
+                [
+                    'item_id' => $item_id,
+                    'shelter_id' => $shelter_id,
+                    'quantity' => $quantity,
+                    'transaction_type' => 'TRANSFER',
+                    'personnel_id' => $personnel_id,
+                    'transaction_notes' => ($transaction_notes ? $transaction_notes . ' ' : '') . 'Transfer to ' . $destShelterName
+                ]
+            );
+
+            $insertResult = execute(
+                'INSERT INTO InventoryLogs (transaction_date, item_id, shelter_id, quantity, transaction_type, personnel_id, transaction_notes)
+                 VALUES (CURDATE(), :item_id, :shelter_id, :quantity, :transaction_type, :personnel_id, :transaction_notes)',
+                [
+                    'item_id' => $destinationItemId,
+                    'shelter_id' => $destination_shelter_id,
+                    'quantity' => $quantity,
+                    'transaction_type' => 'TRANSFER',
+                    'personnel_id' => $personnel_id,
+                    'transaction_notes' => ($transaction_notes ? $transaction_notes . ' ' : '') . 'Transfer from ' . $sourceShelterName
+                ]
+            );
+
+            return ['last_insert_id' => null];
+        }
+
+        $insertResult = execute(
+            'INSERT INTO InventoryLogs (transaction_date, item_id, shelter_id, quantity, transaction_type, personnel_id, transaction_notes)
+             VALUES (CURDATE(), :item_id, :shelter_id, :quantity, :transaction_type, :personnel_id, :transaction_notes)',
+            [
+                'item_id' => $item_id,
+                'shelter_id' => $shelter_id,
+                'quantity' => $quantity,
+                'transaction_type' => $transaction_type,
+                'personnel_id' => $personnel_id,
+                'transaction_notes' => $transaction_notes
+            ]
+        );
+
+        $delta = getQuantityDelta($transaction_type, $quantity);
+        if ($delta !== 0) {
+            adjustItemQuantity($item_id, $delta);
+        }
+
+        return $insertResult;
+    });
+    respondSuccess(['success' => true, 'transaction_id' => $result['last_insert_id']], 201);
+
+} elseif ($method === 'PUT') {
+    ensureRoles(['superadmin','shelter_manager']);
+    requireParam($id, 'Log ID');
+    $body = requireJsonBody();
+
+    $existingLog = fetchOne('SELECT item_id, shelter_id, quantity, transaction_type FROM InventoryLogs WHERE transaction_id = :id LIMIT 1', ['id' => $id]);
+    if (!$existingLog) {
+        respondError('Log not found', 404);
+    }
+    if (!isSuperadmin() && !canAccessShelter($existingLog['shelter_id'])) {
+        respondError('Access denied', 403);
+    }
+
+    $transaction_date = sanitize($body['transaction_date'] ?? null);
+    $shelter_id = isset($body['shelter_id']) ? (int)$body['shelter_id'] : $existingLog['shelter_id'];
+    $item_id = isset($body['item_id']) ? (int)$body['item_id'] : (int)$existingLog['item_id'];
+    $quantity = isset($body['quantity']) ? (float)$body['quantity'] : (float)$existingLog['quantity'];
+    $transaction_type = sanitize($body['transaction_type'] ?? $existingLog['transaction_type']);
+    $personnel_id = isset($body['personnel_id']) ? (int)$body['personnel_id'] : null;
+    $transaction_notes = sanitize($body['transaction_notes'] ?? null);
+
+    if (!in_array($transaction_type, ['IN', 'OUT', 'TRANSFER', 'ADJUST'])) {
+        respondError('Invalid transaction_type', 400);
+    }
+
+    $oldDelta = getQuantityDelta($existingLog['transaction_type'], $existingLog['quantity']);
+    $newDelta = getQuantityDelta($transaction_type, $quantity);
+
+    updateTable('InventoryLogs', 'transaction_id', $id, [
+        'transaction_date' => $transaction_date,
+        'item_id' => $item_id,
+        'shelter_id' => $shelter_id,
+        'quantity' => $quantity,
+        'transaction_type' => $transaction_type,
+        'personnel_id' => $personnel_id,
+        'transaction_notes' => $transaction_notes
+    ]);
+
+    if ($item_id !== (int)$existingLog['item_id']) {
+        adjustItemQuantity($existingLog['item_id'], -$oldDelta);
+        adjustItemQuantity($item_id, $newDelta);
+    } else {
+        adjustItemQuantity($item_id, $newDelta - $oldDelta);
+    }
+
+    respondSuccess(['success' => true]);
+
+} elseif ($method === 'DELETE') {
+    ensureRoles(['superadmin','shelter_manager']);
+    if (!$id) {
+        respondError('Log ID required', 400);
+    }
+
+    $existingLog = fetchOne('SELECT item_id, shelter_id, quantity, transaction_type FROM InventoryLogs WHERE transaction_id = :id LIMIT 1', ['id' => $id]);
+    if (!$existingLog) {
+        respondError('Log not found', 404);
+    }
+    if (!isSuperadmin() && !canAccessShelter($existingLog['shelter_id'])) {
+        respondError('Access denied', 403);
+    }
 
     try {
-        $updateItemOnHand = function($item_id, $delta) use ($conn) {
-            $stmt = $conn->prepare("SELECT on_hand_qty FROM Items WHERE item_id = ? FOR UPDATE");
-            $stmt->bind_param("i", $item_id);
-            $stmt->execute();
-            $res = $stmt->get_result()->fetch_assoc();
-            if (!$res) {
-                $stmt->close();
-                throw new Exception("Item not found (ID: $item_id).");
-            }
-            $current = toFloat($res["on_hand_qty"]);
-            $newQty = $current + $delta;
-
-            $stmt->close();
-
-            $stmt2 = $conn->prepare("UPDATE Items SET on_hand_qty = ? WHERE item_id = ?");
-            $stmt2->bind_param("di", $newQty, $item_id);
-            $stmt2->execute();
-            if ($stmt2->affected_rows !== 1) {
-                $stmt2->close();
-                throw new Exception("Failed to update on_hand_qty for item $item_id.");
-            }
-            $stmt2->close();
-
-            return $newQty;
-        };
-
-        $insertLog = function($transaction_date, $item_id, $shelter_id, $quantity, $transaction_type, $personnel_id, $transaction_notes_param) use ($conn) {
-            $stmt = $conn->prepare("
-                INSERT INTO InventoryLogs
-                (transaction_date, item_id, shelter_id, quantity, transaction_type, personnel_id, transaction_notes)
-                VALUES
-                (?, ?, ?, ?, ?, ?, ?)
-            ");
-            $stmt->bind_param(
-                "siidssi",
-                $transaction_date,
-                $item_id,
-                $shelter_id,
-                $quantity,
-                $transaction_type,
-                $personnel_id,
-                $transaction_notes_param
-            );
-
-            $stmt->close();
-        };
-
-        $insertLog2 = function($transaction_date, $item_id, $shelter_id, $quantity, $transaction_type, $personnel_id, $transaction_notes_param) use ($conn) {
-            $stmt = $conn->prepare("
-                INSERT INTO InventoryLogs
-                (transaction_date, item_id, shelter_id, quantity, transaction_type, personnel_id, transaction_notes)
-                VALUES
-                (?, ?, ?, ?, ?, ?, ?)
-            ");
-            $qty = $quantity;
-            $stmt->bind_param(
-                "siidsis",
-                $transaction_date,
-                $item_id,
-                $shelter_id,
-                $qty,
-                $transaction_type,
-                $personnel_id,
-                $transaction_notes_param
-            );
-            $stmt->close();
-        };
-
-        $insertLogInline = function($transaction_date, $item_id, $shelter_id, $quantity, $transaction_type, $personnel_id, $transaction_notes_param) use ($conn) {
-            $stmt = $conn->prepare("
-                INSERT INTO InventoryLogs
-                (transaction_date, item_id, shelter_id, quantity, transaction_type, personnel_id, transaction_notes)
-                VALUES
-                (?, ?, ?, ?, ?, ?, ?)
-            ");
-            $qty = $quantity;
-            $stmt->bind_param(
-                "siidsis",
-                $transaction_date,
-                $item_id,
-                $shelter_id,
-                $qty,
-                $transaction_type,
-                $personnel_id,
-                $transaction_notes_param
-            );
-            $stmt->close();
-        };
-
-        $insertLogFinal = function($transaction_date, $item_id, $shelter_id, $quantity, $transaction_type, $personnel_id, $transaction_notes_param) use ($conn) {
-            if ($transaction_notes_param === null) {
-                $stmt = $conn->prepare("
-                    INSERT INTO InventoryLogs
-                    (transaction_date, item_id, shelter_id, quantity, transaction_type, personnel_id, transaction_notes)
-                    VALUES
-                    (?, ?, ?, ?, ?, ?, NULL)
-                ");
-                $qty = $quantity;
-                $stmt->bind_param("sii ds i", $transaction_date, $item_id, $shelter_id, $qty, $transaction_type, $personnel_id);
-                $stmt->execute();
-                $stmt->close();
-            } else {
-                $stmt = $conn->prepare("
-                    INSERT INTO InventoryLogs
-                    (transaction_date, item_id, shelter_id, quantity, transaction_type, personnel_id, transaction_notes)
-                    VALUES
-                    (?, ?, ?, ?, ?, ?, ?)
-                ");
-                $qty = $quantity;
-                $stmt->bind_param("sii d s i s", $transaction_date, $item_id, $shelter_id, $qty, $transaction_type, $personnel_id, $transaction_notes_param);
-                $stmt->execute();
-                $stmt->close();
-            }
-        };
-
-        if ($action !== "add") {
-            throw new Exception("Only add is supported for inventory movements in this page.");
+        $delta = getQuantityDelta($existingLog['transaction_type'], $existingLog['quantity']);
+        if ($delta !== 0) {
+            adjustItemQuantity($existingLog['item_id'], -$delta);
         }
-
-        if ($transaction_type === "IN") {
-            $item_id = (int)($_POST["item_id"] ?? 0);
-            $shelter_id = (int)($_POST["shelter_id"] ?? 0);
-
-            if ($item_id <= 0 || $shelter_id <= 0) throw new Exception("Select item and shelter.");
-
-            $updateItemOnHand($item_id, +$quantity);
-
-            $insertLogFinal($transaction_date, $item_id, $shelter_id, $quantity, $transaction_type, $personnel_id, $transaction_notes_param);
-
-        } elseif ($transaction_type === "OUT") {
-            $item_id = (int)($_POST["item_id"] ?? 0);
-            $shelter_id = (int)($_POST["shelter_id"] ?? 0);
-
-            if ($item_id <= 0 || $shelter_id <= 0) throw new Exception("Select item and shelter.");
-
-            $stmt = $conn->prepare("SELECT on_hand_qty FROM Items WHERE item_id = ? FOR UPDATE");
-            $stmt->bind_param("i", $item_id);
-            $stmt->execute();
-            $res = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-            if (!$res) throw new Exception("Item not found.");
-
-            $current = toFloat($res["on_hand_qty"]);
-            $newQty = $current - $quantity;
-            if ($newQty < 0) throw new Exception("Insufficient on-hand quantity for OUT.");
-
-            $updateItemOnHand($item_id, -$quantity);
-
-            $insertLogFinal($transaction_date, $item_id, $shelter_id, $quantity, $transaction_type, $personnel_id, $transaction_notes_param);
-
-        } elseif ($transaction_type === "ADJUST") {
-            $item_id = (int)($_POST["item_id"] ?? 0);
-            $shelter_id = (int)($_POST["shelter_id"] ?? 0);
-
-            $adjust_mode = $_POST["adjust_mode"] ?? "INCREASE";
-            if ($adjust_mode !== "INCREASE" && $adjust_mode !== "DECREASE") $adjust_mode = "INCREASE";
-
-            if ($item_id <= 0 || $shelter_id <= 0) throw new Exception("Select item and shelter.");
-
-            if ($adjust_mode === "DECREASE") {
-                $stmt = $conn->prepare("SELECT on_hand_qty FROM Items WHERE item_id = ? FOR UPDATE");
-                $stmt->bind_param("i", $item_id);
-                $stmt->execute();
-                $res = $stmt->get_result()->fetch_assoc();
-                $stmt->close();
-                if (!$res) throw new Exception("Item not found.");
-
-                $current = toFloat($res["on_hand_qty"]);
-                if ($current - $quantity < 0) throw new Exception("Insufficient on-hand quantity for ADJUST DECREASE.");
-                $updateItemOnHand($item_id, -$quantity);
-            } else {
-                $updateItemOnHand($item_id, +$quantity);
-            }
-
-            $insertLogFinal($transaction_date, $item_id, $shelter_id, $quantity, "ADJUST", $personnel_id, $transaction_notes_param);
-
-        } elseif ($transaction_type === "TRANSFER") {
-            $from_item_id = (int)($_POST["from_item_id"] ?? 0);
-            $from_shelter_id = (int)($_POST["from_shelter_id"] ?? 0);
-
-            $to_item_id = (int)($_POST["to_item_id"] ?? 0);
-            $to_shelter_id = (int)($_POST["to_shelter_id"] ?? 0);
-
-            if ($from_item_id <= 0 || $from_shelter_id <= 0 || $to_item_id <= 0 || $to_shelter_id <= 0) {
-                throw new Exception("Select FROM and TO items/shelters.");
-            }
-
-            $stmt = $conn->prepare("SELECT on_hand_qty FROM Items WHERE item_id = ? FOR UPDATE");
-            $stmt->bind_param("i", $from_item_id);
-            $stmt->execute();
-            $res = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-            if (!$res) throw new Exception("FROM item not found.");
-
-            $current = toFloat($res["on_hand_qty"]);
-            if ($current - $quantity < 0) throw new Exception("Insufficient on-hand quantity for TRANSFER OUT part.");
-
-            $updateItemOnHand($from_item_id, -$quantity);
-            $insertLogFinal($transaction_date, $from_item_id, $from_shelter_id, $quantity, "TRANSFER", $personnel_id, $transaction_notes_param);
-
-            $updateItemOnHand($to_item_id, +$quantity);
-            $insertLogFinal($transaction_date, $to_item_id, $to_shelter_id, $quantity, "TRANSFER", $personnel_id, $transaction_notes_param);
-
-        } else {
-            throw new Exception("Invalid transaction_type.");
-        }
-
-        $conn->commit();
-        header("Location: inventory_movements.php");
-        exit;
+        execute('DELETE FROM InventoryLogs WHERE transaction_id = :id', ['id' => $id]);
+        respondSuccess(['success' => true]);
 
     } catch (Exception $e) {
-        $conn->rollback();
-        die($e->getMessage());
+        respondError('Failed to delete log: ' . $e->getMessage(), 500);
     }
-}
 
-$itemsForForm = [];
-$itemsFromForm = [];
-$itemsToForm = [];
-
-$formTransactionType = $_POST["transaction_type"] ?? ($editMovement["transaction_type"] ?? "IN");
-
-if ($_POST["shelter_id"] ?? null) {
-    $itemsForForm = fetchItemsByShelter($conn, (int)$_POST["shelter_id"]);
+} else {
+    respondError('Method not allowed', 405);
 }
-
-if (isset($_POST["shelter_id"])) {
-    echo "<pre>";
-    echo "shelter_id=".(int)$_POST["shelter_id"]."\n";
-    echo "itemsForForm_count=".count($itemsForForm)."\n";
-    echo "</pre>";
-}
-
-if ($_POST["from_shelter_id"] ?? null) {
-    $itemsFromForm = fetchItemsByShelter($conn, (int)$_POST["from_shelter_id"]);
-}
-if ($_POST["to_shelter_id"] ?? null) {
-    $itemsToForm = fetchItemsByShelter($conn, (int)$_POST["to_shelter_id"]);
-}
-render_page:
-$movementResult = $conn->query("
-    SELECT
-        il.transaction_id,
-        il.transaction_date,
-        il.transaction_type,
-        il.quantity,
-        il.item_id,
-        il.shelter_id,
-        il.personnel_id,
-        il.transaction_notes,
-        il.created_at,
-        s.shelter_name,
-        it.item_name,
-        p.personnel_name
-    FROM InventoryLogs il
-    JOIN Shelters s ON s.shelter_id = il.shelter_id
-    JOIN Items it ON it.item_id = il.item_id
-    JOIN Personnel p ON p.personnel_id = il.personnel_id
-    ORDER BY il.transaction_id DESC
-");
 ?>
-<!doctype html>
-<html>
-<head>
-<meta charset="utf-8" />
-<title>Inventory Movements</title>
-<style>
-body { font-family: Arial, sans-serif; margin: 20px; }
-table { border-collapse: collapse; width: 100%; margin-top: 16px; }
-th, td { border: 1px solid #ddd; padding: 8px; }
-th { background: #f4f4f4; }
-form { margin: 0; }
-.row { margin-bottom: 10px; }
-input[type="text"], input[type="number"], input[type="date"], select { padding: 6px; width: 100%; max-width: 420px; }
-.actions button { padding: 6px 10px; margin-right: 6px; }
-.card { border: 1px solid #ddd; padding: 14px; border-radius: 6px; max-width: 1100px; }
-.small-muted { color: #666; font-size: 12px; margin-top: 6px; }
-</style>
-</head>
-<body>
-<h2>Inventory Movements</h2>
-
-<div class="card">
-<h3>Add Inventory Movement</h3>
-
-<form method="post" action="inventory_movements.php">
-<input type="hidden" name="action" value="add">
-
-<div class="row">
-<label>Transaction Type</label><br>
-<select name="transaction_type" required>
-    <?php
-    $types = ["IN","OUT","ADJUST","TRANSFER"];
-    $currentType = $formTransactionType;
-    foreach ($types as $t) {
-        $sel = ($currentType === $t) ? "selected" : "";
-        echo "<option value=\"{$t}\" {$sel}>{$t}</option>";
-    }
-    ?>
-</select>
-</div>
-
-<div class="row">
-<label>Transaction Date</label><br>
-<input type="date" name="transaction_date" required value="<?= h($_POST["transaction_date"] ?? date("Y-m-d")) ?>">
-</div>
-
-<div class="row">
-<label>Quantity</label><br>
-<input type="number" step="0.001" name="quantity" required value="<?= h($_POST["quantity"] ?? "0") ?>">
-</div>
-
-<div class="row">
-<label>Personnel</label><br>
-<select name="personnel_id" required>
-    <option value="">-- Select Personnel --</option>
-    <?php while ($prow = $personnel->fetch_assoc()): ?>
-        <?php $pid = (int)$prow["personnel_id"]; ?>
-        <option value="<?= $pid ?>" <?= ((int)($_POST["personnel_id"] ?? 0) === $pid) ? "selected" : "" ?>>
-            <?= h($prow["personnel_name"]) ?> (<?= $pid ?>)
-        </option>
-    <?php endwhile; ?>
-</select>
-</div>
-
-<div class="row">
-<label>Notes (optional)</label><br>
-<input type="text" name="transaction_notes" value="<?= h($_POST["transaction_notes"] ?? "") ?>">
-</div>
-
-<?php if ($formTransactionType === "IN" || $formTransactionType === "OUT" || $formTransactionType === "ADJUST"): ?>
-<div class="row">
-<label>Shelter</label><br>
-<select name="shelter_id" required>
-    <option value="">-- Select Shelter --</option>
-    <?php
-    $selShelter = (int)($_POST["shelter_id"] ?? 0);
-    $shelters->data_seek(0);
-    while ($srow = $shelters->fetch_assoc()):
-        $sid = (int)$srow["shelter_id"];
-    ?>
-    <option value="<?= $sid ?>" <?= ($selShelter === $sid) ? "selected" : "" ?>>
-        <?= h($srow["shelter_name"]) ?> (<?= $sid ?>)
-    </option>
-    <?php endwhile; ?>
-</select>
-</div>
-
-<div class="row">
-<label>Item</label><br>
-<select name="item_id" required>
-    <option value="">-- Select Item --</option>
-    <?php
-    $items = $itemsForForm;
-    $currentItem = (int)($_POST["item_id"] ?? 0);
-    foreach ($items as $itrow):
-        $iid = (int)$itrow["item_id"];
-    ?>
-    <option value="<?= $iid ?>" <?= ($currentItem === $iid) ? "selected" : "" ?>>
-        <?= h($itrow["item_name"]) ?> (<?= h($itrow["unit"]) ?>) [<?= $iid ?>]
-    </option>
-    <?php endforeach; ?>
-</select>
-</div>
-
-<?php if ($formTransactionType === "ADJUST"): ?>
-<div class="row">
-<label>Adjust Mode</label><br>
-<select name="adjust_mode" required>
-    <?php $mode = $_POST["adjust_mode"] ?? "INCREASE"; ?>
-    <option value="INCREASE" <?= $mode === "INCREASE" ? "selected" : "" ?>>INCREASE</option>
-    <option value="DECREASE" <?= $mode === "DECREASE" ? "selected" : "" ?>>DECREASE</option>
-</select>
-</div>
-<?php endif; ?>
-
-<?php elseif ($formTransactionType === "TRANSFER"): ?>
-<div style="display:flex; gap:16px; flex-wrap:wrap;">
-<div style="flex:1; min-width:320px;">
-    <div class="row">
-        <label>From Shelter</label><br>
-        <select name="from_shelter_id" required>
-            <option value="">-- Select Shelter --</option>
-            <?php
-            $selFS = (int)($_POST["from_shelter_id"] ?? 0);
-            $shelters->data_seek(0);
-            while ($srow = $shelters->fetch_assoc()):
-                $sid = (int)$srow["shelter_id"];
-            ?>
-            <option value="<?= $sid ?>" <?= ($selFS === $sid) ? "selected" : "" ?>>
-                <?= h($srow["shelter_name"]) ?> (<?= $sid ?>)
-            </option>
-            <?php endwhile; ?>
-        </select>
-    </div>
-
-    <div class="row">
-        <label>From Item</label><br>
-        <select name="from_item_id" required>
-            <option value="">-- Select Item --</option>
-            <?php
-            $fromItems = $itemsFromForm;
-            $currentFI = (int)($_POST["from_item_id"] ?? 0);
-            foreach ($fromItems as $itrow):
-                $iid = (int)$itrow["item_id"];
-            ?>
-            <option value="<?= $iid ?>" <?= ($currentFI === $iid) ? "selected" : "" ?>>
-                <?= h($itrow["item_name"]) ?> (<?= h($itrow["unit"]) ?>) [<?= $iid ?>]
-            </option>
-            <?php endforeach; ?>
-        </select>
-    </div>
-</div>
-
-<div style="flex:1; min-width:320px;">
-    <div class="row">
-        <label>To Shelter</label><br>
-        <select name="to_shelter_id" required>
-            <option value="">-- Select Shelter --</option>
-            <?php
-            $selTS = (int)($_POST["to_shelter_id"] ?? 0);
-            $shelters->data_seek(0);
-            while ($srow = $shelters->fetch_assoc()):
-                $sid = (int)$srow["shelter_id"];
-            ?>
-            <option value="<?= $sid ?>" <?= ($selTS === $sid) ? "selected" : "" ?>>
-                <?= h($srow["shelter_name"]) ?> (<?= $sid ?>)
-            </option>
-            <?php endwhile; ?>
-        </select>
-    </div>
-
-    <div class="row">
-        <label>To Item</label><br>
-        <select name="to_item_id" required>
-            <option value="">-- Select Item --</option>
-            <?php
-            $toItems = $itemsToForm;
-            $currentTI = (int)($_POST["to_item_id"] ?? 0);
-            foreach ($toItems as $itrow):
-                $iid = (int)$itrow["item_id"];
-            ?>
-            <option value="<?= $iid ?>" <?= ($currentTI === $iid) ? "selected" : "" ?>>
-                <?= h($itrow["item_name"]) ?> (<?= h($itrow["unit"]) ?>) [<?= $iid ?>]
-            </option>
-            <?php endforeach; ?>
-        </select>
-    </div>
-</div>
-</div>
-
-<div class="row">
-<label>Shelter</label><br>
-<select name="shelter_id" required onchange="/* remove auto-submit if you want */">
-<option value="">-- Select Shelter --</option>
-<?php
-$selShelter = (int)($_POST["shelter_id"] ?? 0);
-$shelters->data_seek(0);
-while ($srow = $shelters->fetch_assoc()):
-    $sid = (int)$srow["shelter_id"];
-?>
-<option value="<?= $sid ?>" <?= ($selShelter === $sid) ? "selected" : "" ?>>
-<?= h($srow["shelter_name"]) ?> (<?= $sid ?>)
-</option>
-<?php endwhile; ?>
-</select>
-
-<button type="submit" name="action" value="reload_items">Reload Items</button>
-</div>
-
-
-<div class="small-muted">TRANSFER writes two log rows (TRANSFER OUT and TRANSFER IN) and updates on-hand in both items.</div>
-<?php endif; ?>
-
-<div class="actions">
-<button type="submit">Add Movement</button>
-<a href="inventory.php"><button type="button">Back to Items</button></a>
-</div>
-
-</form>
-</div>
-
-<table>
-<thead>
-<tr>
-<th>ID</th>
-<th>Date</th>
-<th>Type</th>
-<th>Quantity</th>
-<th>Item</th>
-<th>Shelter</th>
-<th>Personnel</th>
-<th>Notes</th>
-<th>Created</th>
-</tr>
-</thead>
-<tbody>
-<?php while ($m = $movementResult->fetch_assoc()): ?>
-<tr>
-<td><?= (int)$m["transaction_id"] ?></td>
-<td><?= h($m["transaction_date"]) ?></td>
-<td><?= h($m["transaction_type"]) ?></td>
-<td><?= h($m["quantity"]) ?></td>
-<td><?= h($m["item_name"]) ?> (<?= (int)$m["item_id"] ?>)</td>
-<td><?= h($m["shelter_name"]) ?> (<?= (int)$m["shelter_id"] ?>)</td>
-<td><?= h($m["personnel_name"]) ?> (<?= (int)$m["personnel_id"] ?>)</td>
-<td><?= h($m["transaction_notes"]) ?></td>
-<td><?= h($m["created_at"]) ?></td>
-</tr>
-<?php endwhile; ?>
-</tbody>
-</table>
-
-</body>
-</html>

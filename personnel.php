@@ -1,190 +1,154 @@
 <?php
-require_once __DIR__ . "/db_config.php";
 
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
+require_once __DIR__ . '/api-helper.php';
 
-$conn = new mysqli($dbHost, $dbUser, $dbPass, $dbName);
-if ($conn->connect_error) {
-    die("DB connection failed: " . $conn->connect_error);
-}
+$method = getMethod();
+$id = getQuery('id');
+$body = getJsonBody();
 
-$conn->set_charset("utf8mb4");
+requireAuth();
+ensureRoles(['superadmin','shelter_manager','auditor']);
 
-function h($s) { return htmlspecialchars($s ?? "", ENT_QUOTES, "UTF-8"); }
-
-$personnel = $conn->query("
-SELECT personnel_id, personnel_name, role, phone, created_at
-FROM Personnel
-ORDER BY personnel_id DESC
-");
-
-if ($_SERVER["REQUEST_METHOD"] === "POST") {
-    $action = $_POST["action"] ?? "";
-
-    $personnel_id = (int)($_POST["personnel_id"] ?? 0);
-
-    $personnel_name = trim($_POST["personnel_name"] ?? "");
-    $role = trim($_POST["role"] ?? "");
-    $phone = trim($_POST["phone"] ?? "");
-
-    $personnel_name_param = ($personnel_name === "") ? null : $personnel_name;
-    $role_param = ($role === "") ? null : $role;
-    $phone_param = ($phone === "") ? null : $phone;
-
-    if ($action === "add") {
-        $stmt = $conn->prepare("
-        INSERT INTO Personnel
-        (personnel_name, role, phone)
-        VALUES
-        (?, ?, ?)
-        ");
-        if (!$stmt) { die("Prepare failed (add): " . $conn->error); }
-
-        if ($personnel_name_param === null) die("personnel_name is required.");
-
-        $stmt->bind_param("sss",
-                          $personnel_name_param,
-                          $role_param,
-                          $phone_param
+if ($method === 'GET') {
+    if ($id) {
+        $person = fetchOne(
+            'SELECT personnel_id, personnel_name, username, phone, is_active, created_at, updated_at
+             FROM Personnel
+             WHERE personnel_id = :id',
+            ['id' => $id]
         );
 
-        if (!$stmt->execute()) { die("Execute failed (add): " . $stmt->error); }
-        $stmt->close();
+        if (!$person) {
+            respondError('Personnel not found', 404);
+        }
 
-    } elseif ($action === "update") {
-        $stmt = $conn->prepare("
-        UPDATE Personnel
-        SET personnel_name = ?,
-        role = ?,
-        phone = ?
-        WHERE personnel_id = ?
-        ");
-        if (!$stmt) { die("Prepare failed (update): " . $conn->error); }
+        $roles = fetchAll('SELECT r.role_name, pr.shelter_id FROM PersonnelRoles pr JOIN Roles r ON r.role_id = pr.role_id WHERE pr.personnel_id = :id', ['id' => $id]);
+        if (!isGlobalReader()) {
+            $allowed = false;
+            foreach ($roles as $role) {
+                if (canAccessShelter($role['shelter_id'])) {
+                    $allowed = true;
+                    break;
+                }
+            }
+            if (!$allowed) {
+                respondError('Access denied', 403);
+            }
+        }
 
-        if ($personnel_name_param === null) die("personnel_name is required.");
-
-        $stmt->bind_param(
-            "sssi",
-            $personnel_name_param,
-            $role_param,
-            $phone_param,
-            $personnel_id
-        );
-
-        if (!$stmt->execute()) { die("Execute failed (update): " . $stmt->error); }
-        $stmt->close();
-
-    } elseif ($action === "delete") {
-        $stmt = $conn->prepare("DELETE FROM Personnel WHERE personnel_id = ?");
-        $stmt->bind_param("i", $personnel_id);
-        $stmt->execute();
-        $stmt->close();
+        $person['roles'] = $roles;
+        respondSuccess(['personnel' => $person]);
+    } else {
+        if (isGlobalReader()) {
+            $personnel = fetchAll(
+                'SELECT personnel_id, personnel_name, username, phone, is_active, created_at, updated_at
+                 FROM Personnel
+                 ORDER BY personnel_id DESC'
+            );
+            foreach ($personnel as &$p) {
+                $roles = fetchAll('SELECT r.role_name, pr.shelter_id FROM PersonnelRoles pr JOIN Roles r ON r.role_id = pr.role_id WHERE pr.personnel_id = :id', ['id' => $p['personnel_id']]);
+                $p['roles'] = $roles;
+            }
+            unset($p);
+        } else {
+            $shelterIds = getCurrentShelterIds();
+            if (empty($shelterIds)) {
+                respondError('Access denied', 403);
+            }
+            $placeholders = implode(',', array_fill(0, count($shelterIds), '?'));
+            $personnel = fetchAll(
+                "SELECT DISTINCT p.personnel_id, p.personnel_name, p.username, p.phone, p.is_active, p.created_at, p.updated_at
+                 FROM Personnel p
+                 JOIN PersonnelRoles pr ON pr.personnel_id = p.personnel_id
+                 WHERE pr.shelter_id IN ($placeholders)
+                 ORDER BY p.personnel_id DESC",
+                $shelterIds
+            );
+            foreach ($personnel as &$p) {
+                $roles = fetchAll('SELECT r.role_name, pr.shelter_id FROM PersonnelRoles pr JOIN Roles r ON r.role_id = pr.role_id WHERE pr.personnel_id = :id', ['id' => $p['personnel_id']]);
+                $p['roles'] = $roles;
+            }
+            unset($p);
+        }
+        respondSuccess(['personnel' => $personnel]);
     }
-}
 
-$editPersonnel = null;
-if (isset($_GET["edit"])) {
-    $editId = (int)$_GET["edit"];
-    $stmt = $conn->prepare("
-    SELECT personnel_id, personnel_name, role, phone, created_at
-    FROM Personnel
-    WHERE personnel_id = ?
-    ");
-    $stmt->bind_param("i", $editId);
-    $stmt->execute();
-    $editPersonnel = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
+} elseif ($method === 'POST') {
+    ensureRoles(['superadmin']);
+    validateRequired($body, ['personnel_name', 'username']);
+
+    $personnel_name = sanitize($body['personnel_name']);
+    $username = sanitize($body['username']);
+    $password = $body['password'] ?? null;
+    $phone = sanitize($body['phone'] ?? null);
+    $roles = $body['roles'] ?? null; 
+
+    try {
+        $params = ['personnel_name' => $personnel_name, 'username' => $username, 'phone' => $phone];
+        if ($password) {
+            $params['password_hash'] = password_hash($password, PASSWORD_DEFAULT);
+            $result = execute('INSERT INTO Personnel (personnel_name, username, password_hash, phone) VALUES (:personnel_name, :username, :password_hash, :phone)', $params);
+        } else {
+            $result = execute('INSERT INTO Personnel (personnel_name, username, phone) VALUES (:personnel_name, :username, :phone)', $params);
+        }
+
+        $newId = $result['last_insert_id'];
+
+        if (is_array($roles)) {
+            foreach ($roles as $r) {
+                if (empty($r['role_name'])) continue;
+                $rrow = fetchOne('SELECT role_id FROM Roles WHERE role_name = :r LIMIT 1', ['r' => $r['role_name']]);
+                if ($rrow) {
+                    execute('INSERT INTO PersonnelRoles (personnel_id, role_id, shelter_id) VALUES (:pid, :rid, :sid)', ['pid' => $newId, 'rid' => $rrow['role_id'], 'sid' => $r['shelter_id'] ?? null]);
+                }
+            }
+        }
+
+        respondSuccess(['success' => true, 'personnel_id' => $newId], 201);
+
+    } catch (Exception $e) {
+        respondError('Failed to create personnel: ' . $e->getMessage(), 500);
+    }
+
+} elseif ($method === 'PUT') {
+    ensureRoles(['superadmin']);
+    requireParam($id, 'Personnel ID');
+    $body = requireJsonBody();
+
+    $personnel_name = sanitize($body['personnel_name'] ?? null);
+    $phone = sanitize($body['phone'] ?? null);
+    $is_active = isset($body['is_active']) ? (int)$body['is_active'] : null;
+    $roles = $body['roles'] ?? null; 
+
+    tryTransaction(function() use ($id, $personnel_name, $phone, $is_active, $roles) {
+        
+        updateTable('Personnel', 'personnel_id', $id, [
+            'personnel_name' => $personnel_name,
+            'phone' => $phone,
+            'is_active' => $is_active
+        ]);
+
+        if (is_array($roles)) {
+            execute('DELETE FROM PersonnelRoles WHERE personnel_id = :id', ['id' => $id]);
+            foreach ($roles as $r) {
+                if (empty($r['role_name'])) continue;
+                $rrow = fetchOne('SELECT role_id FROM Roles WHERE role_name = :r LIMIT 1', ['r' => $r['role_name']]);
+                if ($rrow) {
+                    execute('INSERT INTO PersonnelRoles (personnel_id, role_id, shelter_id) VALUES (:pid, :rid, :sid)', ['pid' => $id, 'rid' => $rrow['role_id'], 'sid' => $r['shelter_id'] ?? null]);
+                }
+            }
+        }
+        return true;
+    });
+    respondSuccess(['success' => true]);
+
+} elseif ($method === 'DELETE') {
+    ensureRoles(['superadmin']);
+    requireParam($id, 'Personnel ID');
+    softDelete('Personnel', 'personnel_id', $id);
+    respondSuccess(['success' => true]);
+
+} else {
+    respondError('Method not allowed', 405);
 }
 ?>
-<!doctype html>
-<html>
-<head>
-<meta charset="utf-8" />
-<title>Personnel</title>
-<style>
-body { font-family: Arial, sans-serif; margin: 20px; }
-table { border-collapse: collapse; width: 100%; margin-top: 16px; }
-th, td { border: 1px solid #ddd; padding: 8px; }
-th { background: #f4f4f4; }
-form { margin: 0; }
-.row { margin-bottom: 10px; }
-input[type="text"], input[type="number"], input[type="date"], select { padding: 6px; width: 100%; max-width: 420px; }
-.actions button { padding: 6px 10px; margin-right: 6px; }
-.card { border: 1px solid #ddd; padding: 14px; border-radius: 6px; max-width: 980px; }
-.small-muted { color: #666; font-size: 12px; margin-top: 6px; }
-</style>
-</head>
-<body>
-<h2>Personnel</h2>
-
-<div class="card">
-<h3><?= $editPersonnel ? "Edit Personnel Instance" : "Add Personnel Instance" ?></h3>
-
-<form method="post" action="personnel.php">
-<input type="hidden" name="action" value="<?= $editPersonnel ? "update" : "add" ?>">
-<?php if ($editPersonnel): ?>
-<input type="hidden" name="personnel_id" value="<?= (int)$editPersonnel["personnel_id"] ?>">
-<?php endif; ?>
-
-<div class="row">
-<label>Personnel Name</label><br>
-<input type="text" name="personnel_name" required value="<?= h($editPersonnel["personnel_name"] ?? "") ?>">
-</div>
-
-<div class="row">
-<label>Role (optional)</label><br>
-<input type="text" name="role" value="<?= h($editPersonnel["role"] ?? "") ?>">
-</div>
-
-<div class="row">
-<label>Phone (optional)</label><br>
-<input type="text" name="phone" value="<?= h($editPersonnel["phone"] ?? "") ?>">
-</div>
-
-<div class="actions">
-<button type="submit"><?= $editPersonnel ? "Save Changes" : "Add Personnel" ?></button>
-<?php if ($editPersonnel): ?>
-<a href="personnel.php"><button type="button">Cancel</button></a>
-<?php endif; ?>
-</div>
-
-</form>
-</div>
-
-<table>
-<thead>
-<tr>
-<th>ID</th>
-<th>Name</th>
-<th>Role</th>
-<th>Phone</th>
-<th>Created</th>
-<th>Operations</th>
-</tr>
-</thead>
-<tbody>
-<?php while ($row = $personnel->fetch_assoc()): ?>
-<tr>
-<td><?= (int)$row["personnel_id"] ?></td>
-<td><?= h($row["personnel_name"]) ?></td>
-<td><?= h($row["role"]) ?></td>
-<td><?= h($row["phone"]) ?></td>
-<td><?= h($row["created_at"]) ?></td>
-<td>
-<a href="personnel.php?edit=<?= (int)$row["personnel_id"] ?>">Edit</a>
-<form method="post" action="personnel.php" style="display:inline;">
-<input type="hidden" name="action" value="delete">
-<input type="hidden" name="personnel_id" value="<?= (int)$row["personnel_id"] ?>">
-<button type="submit" onclick="return confirm('Delete personnel #<?= (int)$row["personnel_id"] ?>?');">Delete</button>
-</form>
-</td>
-</tr>
-<?php endwhile; ?>
-</tbody>
-</table>
-
-</body>
-</html>
-<!--  -->
